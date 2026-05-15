@@ -1,24 +1,34 @@
 /**
- * Multi-agent orchestration system using OpenRouter free models.
- * 
+ * Multi-agent orchestration system using OpenRouter models.
+ *
  * Agents:
  * - OCR Agent: baidu/qianfan-ocr-fast:free - Extracts text from PDF images
- * - Orchestrating Agent: inclusionai/ring-2.6-1t:free - Understands user query and delegates tasks
+ * - Orchestrating Agent: openrouter/owl-alpha - Understands user query and delegates tasks
  * - Textual Tasks Agent: google/gemma-4-31b-it:free - Handles summarization, extraction, analysis
  * - Rerouting Agent: openrouter/owl-alpha - Intermediary functions and context processing
  */
 
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const API_TIMEOUT_MS = 60_000;
 
 export const MODELS = {
   OCR: "baidu/qianfan-ocr-fast:free",
-  ORCHESTRATOR: "inclusionai/ring-2.6-1t:free",
+  ORCHESTRATOR: "openrouter/owl-alpha",
   TEXTUAL: "google/gemma-4-31b-it:free",
   REROUTING: "openrouter/owl-alpha",
 };
 
-export type TaskType = "Summarize" | "Extract Key Points" | "Generate Diagram/Infographic description" | "Custom Instructions";
+export const MODEL_FALLBACKS: Record<string, string> = {
+  "google/gemma-4-31b-it:free": "minimax/minimax-m2.5:free",
+  "openrouter/owl-alpha": "minimax/minimax-m2.5:free",
+};
+
+export type TaskType =
+  | "Summarize"
+  | "Extract Key Points"
+  | "Generate Diagram/Infographic description"
+  | "Custom Instructions";
 
 interface AgentResponse {
   content: string;
@@ -40,11 +50,15 @@ interface Message {
 async function callOpenRouter(
   model: string,
   messages: Message[],
-  maxTokens: number = 2000
+  maxTokens: number = 4096,
+  retryCount: number = 0
 ): Promise<AgentResponse> {
   if (!OPENROUTER_API_KEY) {
     throw new Error("OPENROUTER_API_KEY environment variable not set");
   }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
     const response = await fetch(OPENROUTER_API_URL, {
@@ -61,11 +75,32 @@ async function callOpenRouter(
         max_tokens: maxTokens,
         temperature: 0.7,
       }),
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(errorData)}`);
+      const errorText = await response.text();
+
+      if (response.status === 429 && retryCount === 0) {
+        const fallbackModel = MODEL_FALLBACKS[model];
+        if (fallbackModel) {
+          console.warn(
+            `[Agent] Rate limited on ${model}, retrying with fallback ${fallbackModel}`
+          );
+          return callOpenRouter(
+            fallbackModel,
+            messages,
+            maxTokens,
+            retryCount + 1
+          );
+        }
+      }
+
+      throw new Error(
+        `OpenRouter API error: ${response.status} - ${errorText}`
+      );
     }
 
     const data = await response.json();
@@ -76,6 +111,12 @@ async function callOpenRouter(
       usage: data.usage,
     };
   } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(
+        `OpenRouter API timeout after ${API_TIMEOUT_MS}ms for model ${model}`
+      );
+    }
     console.error(`[Agent] Error calling ${model}:`, error);
     throw error;
   }
@@ -88,7 +129,8 @@ export async function ocrAgent(pageContent: string): Promise<AgentResponse> {
   const messages: Message[] = [
     {
       role: "system",
-      content: "You are an OCR specialist. Extract and clean text from the provided PDF page content. Preserve structure and formatting as much as possible.",
+      content:
+        "You are an OCR specialist. Extract and clean text from the provided PDF page content. Preserve structure and formatting as much as possible.",
     },
     {
       role: "user",
@@ -137,16 +179,20 @@ export async function textualTasksAgent(
   let systemPrompt = `You are an expert text analyst. Your task is to ${taskType.toLowerCase()} the provided content.`;
 
   if (taskType === "Summarize") {
-    systemPrompt += " Provide a concise, well-structured summary that captures the key ideas and important details.";
+    systemPrompt +=
+      " Provide a concise, well-structured summary that captures the key ideas and important details.";
   } else if (taskType === "Extract Key Points") {
-    systemPrompt += " Extract and list the most important points, insights, and takeaways from the content.";
+    systemPrompt +=
+      " Extract and list the most important points, insights, and takeaways from the content.";
   } else if (taskType === "Generate Diagram/Infographic description") {
-    systemPrompt += " Analyze the content and describe how it could be visualized as a diagram or infographic. Provide a detailed description of the structure, relationships, and visual elements.";
+    systemPrompt +=
+      " Analyze the content and describe how it could be visualized as a diagram or infographic. Provide a detailed description of the structure, relationships, and visual elements.";
   } else if (taskType === "Custom Instructions") {
     systemPrompt += ` Follow these custom instructions: ${customInstructions}`;
   }
 
-  systemPrompt += "\n\nFormat your response in clear, readable markdown with proper structure.";
+  systemPrompt +=
+    "\n\nFormat your response in clear, readable markdown with proper structure.";
 
   const messages: Message[] = [
     {
@@ -172,7 +218,8 @@ export async function reroutingAgent(
   const messages: Message[] = [
     {
       role: "system",
-      content: "You are an intermediary agent that processes context and applies transformations. Provide clear, structured output.",
+      content:
+        "You are an intermediary agent that processes context and applies transformations. Provide clear, structured output.",
     },
     {
       role: "user",
@@ -198,10 +245,18 @@ export async function executeTask(
 }> {
   try {
     // Step 1: Orchestrating agent analyzes the request
-    const orchestration = await orchestratingAgent(userQuery || taskType, taskType, pageContent);
+    const orchestration = await orchestratingAgent(
+      userQuery || taskType,
+      taskType,
+      pageContent
+    );
 
     // Step 2: Textual tasks agent executes the main task
-    const taskResult = await textualTasksAgent(taskType, pageContent, customInstructions);
+    const taskResult = await textualTasksAgent(
+      taskType,
+      pageContent,
+      customInstructions
+    );
 
     // Step 3: Optionally use rerouting agent for post-processing (for complex tasks)
     let finalResult = taskResult.content;
@@ -236,7 +291,8 @@ export async function testOpenRouterConnection(): Promise<boolean> {
       [
         {
           role: "user",
-          content: "Say 'OpenRouter API connection successful' if you can read this.",
+          content:
+            "Say 'OpenRouter API connection successful' if you can read this.",
         },
       ],
       100

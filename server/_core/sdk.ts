@@ -276,8 +276,13 @@ class SDKServer {
     }
 
     const sessionUserId = session.openId;
-    const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
+    const signedInAt = new Date().toISOString();
+    let user: Awaited<ReturnType<typeof db.getUserByOpenId>>;
+    try {
+      user = await db.getUserByOpenId(sessionUserId);
+    } catch {
+      user = undefined;
+    }
 
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
@@ -292,6 +297,20 @@ class SDKServer {
         });
         user = await db.getUserByOpenId(userInfo.openId);
       } catch (error) {
+        // For dev sessions (openId starting with "dev-"), fall back to synthetic user
+        if (session.openId.startsWith("dev-")) {
+          return {
+            id: -1,
+            openId: session.openId,
+            name: session.name || session.openId,
+            email: null,
+            loginMethod: "dev",
+            role: "admin",
+            createdAt: signedInAt,
+            updatedAt: signedInAt,
+            lastSignedIn: signedInAt,
+          } as unknown as AuthenticatedUser;
+        }
         console.error("[Auth] Failed to sync user from OAuth:", error);
         throw ForbiddenError("Failed to sync user info");
       }
@@ -321,7 +340,7 @@ export type AuthenticatedUser = User & {
 function buildCronUser(
   userInfo: GetUserInfoWithJwtResponse
 ): AuthenticatedUser {
-  const now = new Date();
+  const now = new Date().toISOString();
   return {
     id: -1,
     openId: userInfo.openId,
@@ -334,7 +353,7 @@ function buildCronUser(
     lastSignedIn: now,
     taskUid: userInfo.taskUid ?? undefined,
     isCron: true,
-  } as AuthenticatedUser;
+  } as unknown as AuthenticatedUser;
 }
 
 export const sdk = new SDKServer();

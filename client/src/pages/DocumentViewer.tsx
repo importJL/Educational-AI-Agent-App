@@ -4,8 +4,22 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Upload, X, ZoomIn, ZoomOut, Copy, Download } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Loader2,
+  Upload,
+  X,
+  ZoomIn,
+  ZoomOut,
+  Copy,
+  Download,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import * as pdfjsLib from "pdfjs-dist";
@@ -13,7 +27,11 @@ import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
-type TaskType = "Summarize" | "Extract Key Points" | "Generate Diagram/Infographic description" | "Custom Instructions";
+type TaskType =
+  | "Summarize"
+  | "Extract Key Points"
+  | "Generate Diagram/Infographic description"
+  | "Custom Instructions";
 
 export default function DocumentViewer() {
   const [file, setFile] = useState<File | null>(null);
@@ -48,7 +66,7 @@ export default function DocumentViewer() {
 
     setFile(selectedFile);
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = async event => {
       const data = event.target?.result as ArrayBuffer;
       try {
         const pdf = await pdfjsLib.getDocument({ data }).promise;
@@ -65,7 +83,10 @@ export default function DocumentViewer() {
   };
 
   // Render PDF page
-  const renderPage = async (pdf: pdfjsLib.PDFDocumentProxy, pageNum: number) => {
+  const renderPage = async (
+    pdf: pdfjsLib.PDFDocumentProxy,
+    pageNum: number
+  ) => {
     try {
       // Cancel previous render task if still running
       if (renderTaskRef.current) {
@@ -117,6 +138,16 @@ export default function DocumentViewer() {
     };
   }, []);
 
+  // Helper function to extract text from a specific page
+  const extractPageText = async (
+    pdf: pdfjsLib.PDFDocumentProxy,
+    pageNum: number
+  ): Promise<string> => {
+    const page = await pdf.getPage(pageNum);
+    const textContent = await page.getTextContent();
+    return textContent.items.map((item: any) => item.str).join(" ");
+  };
+
   // Execute task
   const handleExecuteTask = async () => {
     if (!file || !pageContent) {
@@ -126,9 +157,31 @@ export default function DocumentViewer() {
 
     setIsExecuting(true);
     try {
-      // First, upload the document if not already uploaded
       let documentId: number;
-      const base64Data = await new Promise<string>((resolve) => {
+      let contentToSend: string;
+      let pageContents: string[] | undefined;
+
+      // Handle multi-page extraction if page range is specified
+      if (
+        pageStart !== undefined &&
+        pageEnd !== undefined &&
+        pageStart !== pageEnd &&
+        pdfDoc
+      ) {
+        // Extract text from each page in the range
+        const contents: string[] = [];
+        for (let p = pageStart; p <= pageEnd; p++) {
+          const text = await extractPageText(pdfDoc, p);
+          contents.push(`--- Page ${p} ---\n${text}`);
+        }
+        pageContents = contents;
+        contentToSend = contents.join("\n\n---\n\n");
+      } else {
+        // Single page or no range: use current page content
+        contentToSend = pageContent;
+      }
+
+      const base64Data = await new Promise<string>(resolve => {
         const reader = new FileReader();
         reader.onload = () => resolve((reader.result as string).split(",")[1]);
         reader.readAsDataURL(file);
@@ -146,7 +199,8 @@ export default function DocumentViewer() {
       // Execute task
       const result = await tasksExecute.mutateAsync({
         documentId,
-        pageContent,
+        pageContent: pageContents ? undefined : contentToSend,
+        pageContents: pageContents,
         taskType,
         customInstructions: customInstructions || undefined,
         pageStart,
@@ -180,13 +234,24 @@ export default function DocumentViewer() {
 
   // Download result
   const handleDownload = (format: "json" | "text") => {
-    const content = format === "json" 
-      ? JSON.stringify({ taskType, result: taskResult, date: new Date() }, null, 2)
-      : taskResult;
-    
+    const content =
+      format === "json"
+        ? JSON.stringify(
+            { taskType, result: taskResult, date: new Date() },
+            null,
+            2
+          )
+        : taskResult;
+
     const element = document.createElement("a");
-    element.setAttribute("href", `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`);
-    element.setAttribute("download", `result.${format === "json" ? "json" : "txt"}`);
+    element.setAttribute(
+      "href",
+      `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`
+    );
+    element.setAttribute(
+      "download",
+      `result.${format === "json" ? "json" : "txt"}`
+    );
     element.style.display = "none";
     document.body.appendChild(element);
     element.click();
@@ -203,8 +268,12 @@ export default function DocumentViewer() {
             <div className="flex-1 flex flex-col items-center justify-center gap-4 border-2 border-dashed border-border rounded-lg">
               <Upload className="w-12 h-12 text-muted-foreground" />
               <div className="text-center">
-                <p className="font-medium text-foreground mb-2">Upload a PDF Document</p>
-                <p className="text-sm text-muted-foreground mb-4">Drag and drop or click to select</p>
+                <p className="font-medium text-foreground mb-2">
+                  Upload a PDF Document
+                </p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Drag and drop or click to select
+                </p>
               </div>
               <Button onClick={() => fileInputRef.current?.click()}>
                 Choose File
@@ -225,7 +294,9 @@ export default function DocumentViewer() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
+                    onClick={() =>
+                      handlePageChange(Math.max(1, currentPage - 1))
+                    }
                     disabled={currentPage === 1}
                   >
                     ←
@@ -236,7 +307,9 @@ export default function DocumentViewer() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
+                    onClick={() =>
+                      handlePageChange(Math.min(totalPages, currentPage + 1))
+                    }
                     disabled={currentPage === totalPages}
                   >
                     →
@@ -250,7 +323,9 @@ export default function DocumentViewer() {
                   >
                     <ZoomOut className="w-4 h-4" />
                   </Button>
-                  <span className="text-sm text-muted-foreground w-12 text-center">{zoomLevel}%</span>
+                  <span className="text-sm text-muted-foreground w-12 text-center">
+                    {zoomLevel}%
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
@@ -292,18 +367,26 @@ export default function DocumentViewer() {
       <div className="w-96 flex flex-col gap-4 overflow-y-auto">
         {/* Task Selection */}
         <Card className="p-4">
-          <h3 className="font-semibold text-foreground mb-4">Task Configuration</h3>
-          
+          <h3 className="font-semibold text-foreground mb-4">
+            Task Configuration
+          </h3>
+
           <div className="space-y-4">
             {/* Page Range */}
             <div>
-              <label className="text-sm font-medium text-foreground mb-2 block">Page Range</label>
+              <label className="text-sm font-medium text-foreground mb-2 block">
+                Page Range
+              </label>
               <div className="flex gap-2">
                 <Input
                   type="number"
                   placeholder="Start"
                   value={pageStart || ""}
-                  onChange={(e) => setPageStart(e.target.value ? parseInt(e.target.value) : undefined)}
+                  onChange={e =>
+                    setPageStart(
+                      e.target.value ? parseInt(e.target.value) : undefined
+                    )
+                  }
                   min={1}
                   max={totalPages}
                   className="flex-1"
@@ -312,7 +395,11 @@ export default function DocumentViewer() {
                   type="number"
                   placeholder="End"
                   value={pageEnd || ""}
-                  onChange={(e) => setPageEnd(e.target.value ? parseInt(e.target.value) : undefined)}
+                  onChange={e =>
+                    setPageEnd(
+                      e.target.value ? parseInt(e.target.value) : undefined
+                    )
+                  }
                   min={1}
                   max={totalPages}
                   className="flex-1"
@@ -322,16 +409,27 @@ export default function DocumentViewer() {
 
             {/* Task Type */}
             <div>
-              <label className="text-sm font-medium text-foreground mb-2 block">Task Type</label>
-              <Select value={taskType} onValueChange={(value) => setTaskType(value as TaskType)}>
+              <label className="text-sm font-medium text-foreground mb-2 block">
+                Task Type
+              </label>
+              <Select
+                value={taskType}
+                onValueChange={value => setTaskType(value as TaskType)}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Summarize">Summarize</SelectItem>
-                  <SelectItem value="Extract Key Points">Extract Key Points</SelectItem>
-                  <SelectItem value="Generate Diagram/Infographic description">Generate Diagram/Infographic description</SelectItem>
-                  <SelectItem value="Custom Instructions">Custom Instructions</SelectItem>
+                  <SelectItem value="Extract Key Points">
+                    Extract Key Points
+                  </SelectItem>
+                  <SelectItem value="Generate Diagram/Infographic description">
+                    Generate Diagram/Infographic description
+                  </SelectItem>
+                  <SelectItem value="Custom Instructions">
+                    Custom Instructions
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -339,11 +437,13 @@ export default function DocumentViewer() {
             {/* Custom Instructions */}
             {taskType === "Custom Instructions" && (
               <div>
-                <label className="text-sm font-medium text-foreground mb-2 block">Your Instructions</label>
+                <label className="text-sm font-medium text-foreground mb-2 block">
+                  Your Instructions
+                </label>
                 <Textarea
                   placeholder="Enter your custom instructions for the AI..."
                   value={customInstructions}
-                  onChange={(e) => setCustomInstructions(e.target.value)}
+                  onChange={e => setCustomInstructions(e.target.value)}
                   className="min-h-24"
                 />
               </div>

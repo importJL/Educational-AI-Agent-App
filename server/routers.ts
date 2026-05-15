@@ -2,8 +2,10 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { storagePut } from "./storage";
+import { sdk } from "./_core/sdk";
 import {
   createDocument,
   getDocumentsByUserId,
@@ -15,6 +17,7 @@ import {
   deleteSave,
   getUserPreferences,
   createOrUpdateUserPreferences,
+  upsertUser,
 } from "./db";
 import { executeTask } from "./agents";
 
@@ -22,6 +25,47 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    login: publicProcedure
+      .input(
+        z.object({
+          username: z.string().min(1),
+          password: z.string().min(1),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const devUsername = process.env.DEV_USERNAME || "devuser";
+        const devPassword = process.env.DEV_PASSWORD || "devpassword";
+        if (input.username !== devUsername || input.password !== devPassword) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Invalid credentials",
+          });
+        }
+        const openId = `dev-${input.username}`;
+        try {
+          await upsertUser({
+            openId,
+            name: input.username,
+            loginMethod: "dev",
+            role: "admin",
+            lastSignedIn: new Date().toISOString(),
+          });
+        } catch (error) {
+          console.warn(
+            "[Auth] Could not upsert dev user, proceeding with session-only:",
+            error
+          );
+        }
+        const token = await sdk.createSessionToken(openId, {
+          name: input.username,
+        });
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, token, {
+          ...cookieOptions,
+          maxAge: 24 * 60 * 60 * 1000,
+        });
+        return { success: true };
+      }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -31,12 +75,14 @@ export const appRouter = router({
 
   documents: router({
     upload: protectedProcedure
-      .input(z.object({
-        fileName: z.string(),
-        fileData: z.string(),
-        fileSize: z.number().optional(),
-        pageCount: z.number().optional(),
-      }))
+      .input(
+        z.object({
+          fileName: z.string(),
+          fileData: z.string(),
+          fileSize: z.number().optional(),
+          pageCount: z.number().optional(),
+        })
+      )
       .mutation(async ({ input, ctx }) => {
         try {
           const buffer = Buffer.from(input.fileData, "base64");
@@ -78,26 +124,38 @@ export const appRouter = router({
 
   tasks: router({
     execute: protectedProcedure
-      .input(z.object({
-        documentId: z.number(),
-        pageContent: z.string(),
-        taskType: z.enum(["Summarize", "Extract Key Points", "Generate Diagram/Infographic description", "Custom Instructions"]),
-        customInstructions: z.string().optional(),
-        pageStart: z.number().optional(),
-        pageEnd: z.number().optional(),
-      }))
+      .input(
+        z.object({
+          documentId: z.number(),
+          pageContent: z.string().optional(),
+          pageContents: z.array(z.string()).optional(),
+          taskType: z.enum([
+            "Summarize",
+            "Extract Key Points",
+            "Generate Diagram/Infographic description",
+            "Custom Instructions",
+          ]),
+          customInstructions: z.string().optional(),
+          pageStart: z.number().optional(),
+          pageEnd: z.number().optional(),
+        })
+      )
       .mutation(async ({ input, ctx }) => {
         try {
           const document = await getDocumentById(input.documentId, ctx.user.id);
           if (!document) throw new Error("Document not found");
-          
+
+          const contentToProcess = input.pageContents
+            ? input.pageContents.join("\n\n---\n\n")
+            : input.pageContent || "";
+
           const taskResult = await executeTask(
             input.taskType,
-            input.pageContent,
+            contentToProcess,
             undefined,
             input.customInstructions
           );
-          
+
           const save = await createSave(ctx.user.id, {
             documentId: input.documentId,
             documentName: document.fileName,
@@ -109,10 +167,12 @@ export const appRouter = router({
             responseFormat: "markdown",
             model: taskResult.model,
             metadata: {
-              pageCount: input.pageEnd ? (input.pageEnd - (input.pageStart || 1) + 1) : 1,
+              pageCount: input.pageEnd
+                ? input.pageEnd - (input.pageStart || 1) + 1
+                : 1,
             },
           });
-          
+
           return { success: true, result: taskResult.result, saveId: save?.id };
         } catch (error) {
           console.error("[Task Execution] Error:", error);
@@ -146,19 +206,23 @@ export const appRouter = router({
       .query(async ({ input, ctx }) => {
         const save = await getSaveById(input.id, ctx.user.id);
         if (!save) throw new Error("Save not found");
-        
+
         if (input.format === "json") {
           return {
             format: "json",
-            data: JSON.stringify({
-              documentName: save.documentName,
-              taskType: save.taskType,
-              pageStart: save.pageStart,
-              pageEnd: save.pageEnd,
-              response: save.response,
-              createdAt: save.createdAt,
-              model: save.model,
-            }, null, 2),
+            data: JSON.stringify(
+              {
+                documentName: save.documentName,
+                taskType: save.taskType,
+                pageStart: save.pageStart,
+                pageEnd: save.pageEnd,
+                response: save.response,
+                createdAt: save.createdAt,
+                model: save.model,
+              },
+              null,
+              2
+            ),
           };
         } else {
           return {
@@ -172,23 +236,25 @@ export const appRouter = router({
   preferences: router({
     get: protectedProcedure.query(async ({ ctx }) => {
       const prefs = await getUserPreferences(ctx.user.id);
-      return prefs || {
-        defaultModel: "google/gemma-4-31b-it:free",
-        theme: "light",
-        fontSize: "medium",
-        pdfZoomLevel: 100,
-        autoSaveResponses: 1,
-      };
+      return (
+        prefs || {
+          theme: "light",
+          fontSize: "medium",
+          pdfZoomLevel: 100,
+          autoSaveResponses: 1,
+        }
+      );
     }),
 
     update: protectedProcedure
-      .input(z.object({
-        defaultModel: z.string().optional(),
-        theme: z.enum(["light", "dark"]).optional(),
-        fontSize: z.enum(["small", "medium", "large"]).optional(),
-        pdfZoomLevel: z.number().optional(),
-        autoSaveResponses: z.number().optional(),
-      }))
+      .input(
+        z.object({
+          theme: z.enum(["light", "dark"]).optional(),
+          fontSize: z.enum(["small", "medium", "large"]).optional(),
+          pdfZoomLevel: z.number().optional(),
+          autoSaveResponses: z.number().optional(),
+        })
+      )
       .mutation(async ({ input, ctx }) => {
         return await createOrUpdateUserPreferences(ctx.user.id, input);
       }),

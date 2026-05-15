@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import Login from "./pages/Login";
 import DocumentViewer from "./pages/DocumentViewer";
 import Saves from "./pages/Saves";
 import Settings from "./pages/Settings";
@@ -20,20 +21,16 @@ function AppContent() {
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Loading application...</p>
+          <p className="text-sm text-muted-foreground">
+            Loading application...
+          </p>
         </div>
       </div>
     );
   }
 
   if (!user) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="text-center">
-          <p className="text-muted-foreground mb-4">Please log in to continue</p>
-        </div>
-      </div>
-    );
+    return <Login />;
   }
 
   return (
@@ -46,10 +43,12 @@ function AppContent() {
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
                 <span className="text-white font-bold text-sm">AI</span>
               </div>
-              <h1 className="text-lg font-semibold text-foreground">Educational AI Agent</h1>
+              <h1 className="text-lg font-semibold text-foreground">
+                Educational AI Agent
+              </h1>
             </div>
             <div className="flex gap-1">
-              {(["Document Viewer", "Saves", "Settings"] as const).map((tab) => (
+              {(["Document Viewer", "Saves", "Settings"] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
