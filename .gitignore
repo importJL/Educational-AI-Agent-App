@@ -117,3 +117,5 @@ data/
 client/public/__manus__/version.json
 .manus
 .npmrc
+
+todo.md
