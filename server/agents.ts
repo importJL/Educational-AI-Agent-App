@@ -24,6 +24,41 @@ export const MODEL_FALLBACKS: Record<string, string> = {
   "openrouter/owl-alpha": "minimax/minimax-m2.5:free",
 };
 
+function getFallbackModel(model: string, status: number, errorText: string, retryCount: number): string | null {
+  if (retryCount > 0) return null;
+
+  const fallbackModel = MODEL_FALLBACKS[model];
+  if (!fallbackModel) return null;
+
+  if (status === 400 && /location|not supported|region/i.test(errorText)) {
+    return fallbackModel;
+  }
+
+  if (status === 429) {
+    return fallbackModel;
+  }
+
+  if (status === 503) {
+    return fallbackModel;
+  }
+
+  if (status === 402) {
+    return fallbackModel;
+  }
+
+  return null;
+}
+
+function getErrorReason(status: number, errorText: string): string {
+  if (status === 400 && /location|not supported|region/i.test(errorText)) {
+    return "Region/location not supported";
+  }
+  if (status === 429) return "Rate limited";
+  if (status === 503) return "Provider unavailable";
+  if (status === 402) return "Quota exceeded";
+  return `HTTP error ${status}`;
+}
+
 export type TaskType =
   | "Summarize"
   | "Extract Key Points"
@@ -83,19 +118,18 @@ async function callOpenRouter(
     if (!response.ok) {
       const errorText = await response.text();
 
-      if (response.status === 429 && retryCount === 0) {
-        const fallbackModel = MODEL_FALLBACKS[model];
-        if (fallbackModel) {
-          console.warn(
-            `[Agent] Rate limited on ${model}, retrying with fallback ${fallbackModel}`
-          );
-          return callOpenRouter(
-            fallbackModel,
-            messages,
-            maxTokens,
-            retryCount + 1
-          );
-        }
+      const fallbackModel = getFallbackModel(model, response.status, errorText, retryCount);
+      if (fallbackModel) {
+        const errorReason = getErrorReason(response.status, errorText);
+        console.warn(
+          `[Agent] ${errorReason} on ${model}, retrying with fallback ${fallbackModel}`
+        );
+        return callOpenRouter(
+          fallbackModel,
+          messages,
+          maxTokens,
+          retryCount + 1
+        );
       }
 
       throw new Error(

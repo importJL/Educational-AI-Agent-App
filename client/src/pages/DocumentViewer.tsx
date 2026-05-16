@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,8 @@ import {
   Copy,
   Download,
   Bookmark,
+  LayoutGrid,
+  FileText,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -41,6 +43,14 @@ import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
+const LAZY_LOAD_THRESHOLD = 50;
+const BUFFER_PAGES = 5;
+
+interface RenderTask {
+  cancel: () => void;
+  promise: Promise<void>;
+}
+
 type TaskType =
   | "Summarize"
   | "Extract Key Points"
@@ -54,6 +64,9 @@ export default function DocumentViewer() {
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageContent, setPageContent] = useState("");
   const [zoomLevel, setZoomLevel] = useState(100);
+  const [viewMode, setViewMode] = useState<"single" | "multiple">("multiple");
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const pageSizesRef = useRef<Map<number, { width: number; height: number }>>(new Map());
   const [taskType, setTaskType] = useState<TaskType>("Summarize");
   const [customInstructions, setCustomInstructions] = useState("");
   const [pageStart, setPageStart] = useState<number | undefined>();
@@ -63,9 +76,17 @@ export default function DocumentViewer() {
   const [documentId, setDocumentId] = useState<number | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(true);
   const [isResultsOpen, setIsResultsOpen] = useState(true);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
+  const [useLazyLoading, setUseLazyLoading] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const renderTaskRef = useRef<any>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const renderTasksRef = useRef<Map<number, RenderTask>>(new Map());
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isRenderingRef = useRef(false);
 
   const documentsUpload = trpc.documents.upload.useMutation();
   const tasksExecute = trpc.tasks.execute.useMutation();
@@ -81,13 +102,11 @@ export default function DocumentViewer() {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    // Cancel any pending render
-    if (renderTaskRef.current) {
-      renderTaskRef.current.cancel();
-      renderTaskRef.current = null;
-    }
+    renderTasksRef.current.forEach(task => task.cancel());
+    renderTasksRef.current.clear();
 
     setFile(selectedFile);
+    setRenderedPages(new Set());
     const reader = new FileReader();
     reader.onload = async event => {
       const data = event.target?.result as ArrayBuffer;
@@ -96,7 +115,7 @@ export default function DocumentViewer() {
         setPdfDoc(pdf);
         setTotalPages(pdf.numPages);
         setCurrentPage(1);
-        await renderPage(pdf, 1);
+        setUseLazyLoading(pdf.numPages > LAZY_LOAD_THRESHOLD);
       } catch (error) {
         toast.error("Failed to load PDF");
         console.error(error);
@@ -105,21 +124,27 @@ export default function DocumentViewer() {
     reader.readAsArrayBuffer(selectedFile);
   };
 
-  // Render PDF page
+  // Render PDF page with proper cancellation
   const renderPage = async (
     pdf: pdfjsLib.PDFDocumentProxy,
-    pageNum: number
+    pageNum: number,
+    waitForExisting: boolean = false
   ) => {
     try {
-      // Cancel previous render task if still running
-      if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
-        renderTaskRef.current = null;
+      const existingTask = renderTasksRef.current.get(pageNum);
+      if (existingTask) {
+        existingTask.cancel();
+        if (waitForExisting) {
+          try {
+            await existingTask.promise;
+          } catch {}
+        }
       }
 
       const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: zoomLevel / 100 });
-      const canvas = canvasRef.current;
+      const viewport = page.getViewport({ scale: 1 });
+      pageSizesRef.current.set(pageNum, { width: viewport.width, height: viewport.height });
+      const canvas = pageRefs.current.get(pageNum);
       if (!canvas) return;
 
       canvas.width = viewport.width;
@@ -127,18 +152,19 @@ export default function DocumentViewer() {
       const context = canvas.getContext("2d");
       if (!context) return;
 
-      // Clear canvas before rendering
       context.clearRect(0, 0, canvas.width, canvas.height);
 
       const renderTask = page.render({ canvasContext: context, viewport });
-      renderTaskRef.current = renderTask;
+      renderTasksRef.current.set(pageNum, { cancel: renderTask.cancel.bind(renderTask), promise: renderTask.promise });
       await renderTask.promise;
-      renderTaskRef.current = null;
+      renderTasksRef.current.delete(pageNum);
 
-      // Extract text
       const textContent = await page.getTextContent();
       const text = textContent.items.map((item: any) => item.str).join(" ");
-      setPageContent(text);
+
+      if (pageNum === currentPage) {
+        setPageContent(text);
+      }
     } catch (error) {
       if ((error as any).name !== "RenderingCancelledException") {
         console.error("Error rendering page:", error);
@@ -146,20 +172,116 @@ export default function DocumentViewer() {
     }
   };
 
+  // Setup IntersectionObserver for lazy loading and page tracking
   useEffect(() => {
-    if (pdfDoc) {
+    if (!scrollContainerRef.current || !useLazyLoading) return;
+
+    const visiblePages = new Set<number>();
+
+    observerRef.current = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          const pageNum = parseInt(entry.target.getAttribute("data-page") || "0");
+          if (entry.isIntersecting) {
+            visiblePages.add(pageNum);
+            const pagesToRender = new Set(visiblePages);
+            for (let i = Math.max(1, pageNum - BUFFER_PAGES); i <= Math.min(totalPages, pageNum + BUFFER_PAGES); i++) {
+              pagesToRender.add(i);
+            }
+
+            pagesToRender.forEach(p => {
+              if (!renderedPages.has(p) && pdfDoc) {
+                renderPage(pdfDoc, p);
+                setRenderedPages(prev => new Set(Array.from(prev).concat(p)));
+              }
+            });
+
+            setCurrentPage(pageNum);
+            pdfDoc?.getPage(pageNum).then(page => {
+              page.getTextContent().then(textContent => {
+                const text = textContent.items.map((item: any) => item.str).join(" ");
+                setPageContent(text);
+              });
+            });
+          } else {
+            visiblePages.delete(pageNum);
+          }
+        });
+      },
+      { root: scrollContainerRef.current, rootMargin: "100px" }
+    );
+
+    pageRefs.current.forEach((canvas, pageNum) => {
+      observerRef.current?.observe(canvas);
+    });
+
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, [pdfDoc, useLazyLoading, totalPages, renderedPages]);
+
+  // Render current page if needed in single page mode
+  useEffect(() => {
+    if (viewMode === "single" && pdfDoc && !renderedPages.has(currentPage)) {
       renderPage(pdfDoc, currentPage);
+      setRenderedPages(prev => new Set(prev).add(currentPage));
     }
-  }, [zoomLevel, currentPage, pdfDoc]);
+  }, [currentPage, viewMode, pdfDoc]);
+
+  // Render all pages on initial load (non-lazy)
+  useEffect(() => {
+    if (!pdfDoc || useLazyLoading) return;
+    const renderAll = async () => {
+      for (let i = 1; i <= totalPages; i++) {
+        if (!renderedPages.has(i)) {
+          await renderPage(pdfDoc, i);
+          setRenderedPages(prev => new Set(Array.from(prev).concat(i)));
+        }
+      }
+    };
+    renderAll();
+  }, [pdfDoc]);
+
+  // Track container size for fit calculation
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const updateSize = () => {
+      const rect = container.getBoundingClientRect();
+      setContainerSize({ width: rect.width, height: rect.height });
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [viewMode]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
-      }
+      renderTasksRef.current.forEach(task => task.cancel());
+      renderTasksRef.current.clear();
+      observerRef.current?.disconnect();
     };
   }, []);
+
+  // Scroll wheel zoom with non-passive listener
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const handleWheelEvent = (e: WheelEvent) => {
+      if (e.shiftKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -25 : 25;
+        setZoomLevel(prev => Math.max(25, Math.min(400, prev + delta)));
+      }
+    };
+
+    container.addEventListener("wheel", handleWheelEvent, { passive: false });
+    return () => container.removeEventListener("wheel", handleWheelEvent);
+  }, [pdfDoc]);
 
   // Helper function to extract text from a specific page
   const extractPageText = async (
@@ -241,14 +363,25 @@ export default function DocumentViewer() {
     }
   };
 
-  // Handle page navigation with render cancellation
+  // Handle page navigation with scroll
   const handlePageChange = (page: number) => {
-    if (renderTaskRef.current) {
-      renderTaskRef.current.cancel();
-      renderTaskRef.current = null;
-    }
     setCurrentPage(page);
+    const canvas = pageRefs.current.get(page);
+    if (canvas && scrollContainerRef.current) {
+      canvas.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   };
+
+  // Scroll detection for zoom
+  const handleScroll = useCallback(() => {
+    isScrollingRef.current = true;
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    scrollTimeoutRef.current = setTimeout(() => {
+      isScrollingRef.current = false;
+    }, 150);
+  }, []);
 
   // Copy to clipboard
   const handleCopy = () => {
@@ -350,10 +483,11 @@ export default function DocumentViewer() {
                         handlePageChange(Math.max(1, currentPage - 1))
                       }
                       disabled={currentPage === 1}
+                      title="Previous page"
                     >
-                      ←
+                      <ChevronUp className="w-4 h-4" />
                     </Button>
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-sm text-muted-foreground min-w-[100px] text-center">
                       Page {currentPage} of {totalPages}
                     </span>
                     <Button
@@ -363,45 +497,63 @@ export default function DocumentViewer() {
                         handlePageChange(Math.min(totalPages, currentPage + 1))
                       }
                       disabled={currentPage === totalPages}
+                      title="Next page"
                     >
-                      →
+                      <ChevronDown className="w-4 h-4" />
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setZoomLevel(Math.max(50, zoomLevel - 10))}
+                      onClick={() => setZoomLevel(Math.max(25, zoomLevel - 25))}
+                      title="Zoom out (Shift+Scroll)"
                     >
                       <ZoomOut className="w-4 h-4" />
                     </Button>
-                    <span className="text-sm text-muted-foreground w-12 text-center">
+                    <span className="text-sm text-muted-foreground w-14 text-center">
                       {zoomLevel}%
                     </span>
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() =>
-                        setZoomLevel(Math.min(200, zoomLevel + 10))
-                      }
+                      onClick={() => setZoomLevel(Math.min(400, zoomLevel + 25))}
+                      title="Zoom in (Shift+Scroll)"
                     >
                       <ZoomIn className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-1 border-l border-border pl-2">
+                    <Button
+                      variant={viewMode === "single" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setViewMode("single")}
+                      title="Single page view"
+                    >
+                      <FileText className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant={viewMode === "multiple" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setViewMode("multiple")}
+                      title="Multiple page view"
+                    >
+                      <LayoutGrid className="w-4 h-4" />
                     </Button>
                   </div>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      if (renderTaskRef.current) {
-                        renderTaskRef.current.cancel();
-                        renderTaskRef.current = null;
-                      }
+                      renderTasksRef.current.forEach(task => task.cancel());
+                      renderTasksRef.current.clear();
                       setFile(null);
                       setPdfDoc(null);
                       setTaskResult("");
                       setDocumentId(null);
                       setCurrentPage(1);
                       setTotalPages(0);
+                      setRenderedPages(new Set());
                     }}
                   >
                     <X className="w-4 h-4 mr-2" />
@@ -410,8 +562,44 @@ export default function DocumentViewer() {
                 </div>
 
                 {/* PDF Canvas */}
-                <div className="flex-1 overflow-auto flex items-center justify-center bg-muted rounded-lg">
-                  <canvas ref={canvasRef} className="max-w-full max-h-full" />
+                <div
+                  ref={scrollContainerRef}
+                  className={`flex-1 overflow-auto flex ${viewMode === "single" ? "items-center justify-center" : "flex-col items-center"} gap-4 py-4 bg-muted rounded-lg`}
+                  onScroll={handleScroll}
+                >
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => {
+                    const isSingleView = viewMode === "single";
+                    const isVisible = !isSingleView || pageNum === currentPage;
+                    const baseSize = pageSizesRef.current.get(pageNum);
+                    const zoomScale = zoomLevel / 100;
+                    const fitScale = baseSize && containerSize.width > 0
+                      ? (isSingleView
+                          ? Math.min(
+                              Math.max(containerSize.width - 40, 100) / baseSize.width,
+                              Math.max(containerSize.height - 40, 100) / baseSize.height
+                            )
+                          : Math.max(containerSize.width - 40, 100) / baseSize.width)
+                      : 1;
+                    const displayScale = zoomScale * fitScale;
+                    const canvasStyle: React.CSSProperties = {
+                      display: isVisible ? "block" : "none",
+                    };
+                    if (baseSize) {
+                      canvasStyle.width = Math.round(baseSize.width * displayScale);
+                      canvasStyle.height = Math.round(baseSize.height * displayScale);
+                    } else {
+                      canvasStyle.minHeight = 200;
+                    }
+                    return (
+                      <canvas
+                        key={pageNum}
+                        ref={el => { if (el) pageRefs.current.set(pageNum, el); }}
+                        data-page={pageNum}
+                        className="shadow-lg bg-white"
+                        style={canvasStyle}
+                      />
+                    );
+                  })}
                 </div>
               </>
             )}
