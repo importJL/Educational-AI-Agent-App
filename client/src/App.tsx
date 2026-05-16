@@ -66,11 +66,21 @@ function AppContent() {
         </div>
       </nav>
 
-      {/* Main Content */}
+      {/* Main Content - tabs stay mounted, hidden with CSS to preserve state */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === "Document Viewer" && <DocumentViewer />}
-        {activeTab === "Saves" && <Saves />}
-        {activeTab === "Settings" && <Settings />}
+        <div
+          className={
+            activeTab === "Document Viewer" ? "h-full" : "hidden h-full"
+          }
+        >
+          <DocumentViewer />
+        </div>
+        <div className={activeTab === "Saves" ? "h-full" : "hidden h-full"}>
+          <Saves />
+        </div>
+        <div className={activeTab === "Settings" ? "h-full" : "hidden h-full"}>
+          <Settings />
+        </div>
       </div>
     </div>
   );

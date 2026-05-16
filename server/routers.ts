@@ -156,24 +156,7 @@ export const appRouter = router({
             input.customInstructions
           );
 
-          const save = await createSave(ctx.user.id, {
-            documentId: input.documentId,
-            documentName: document.fileName,
-            pageStart: input.pageStart,
-            pageEnd: input.pageEnd,
-            taskType: input.taskType,
-            customInstructions: input.customInstructions,
-            response: taskResult.result,
-            responseFormat: "markdown",
-            model: taskResult.model,
-            metadata: {
-              pageCount: input.pageEnd
-                ? input.pageEnd - (input.pageStart || 1) + 1
-                : 1,
-            },
-          });
-
-          return { success: true, result: taskResult.result, saveId: save?.id };
+          return { success: true, result: taskResult.result };
         } catch (error) {
           console.error("[Task Execution] Error:", error);
           throw new Error("Failed to execute task");
@@ -182,6 +165,31 @@ export const appRouter = router({
   }),
 
   saves: router({
+    create: protectedProcedure
+      .input(
+        z.object({
+          documentId: z.number(),
+          documentName: z.string(),
+          pageStart: z.number().optional(),
+          pageEnd: z.number().optional(),
+          taskType: z.enum([
+            "Summarize",
+            "Extract Key Points",
+            "Generate Diagram/Infographic description",
+            "Custom Instructions",
+          ]),
+          customInstructions: z.string().optional(),
+          response: z.string(),
+          responseFormat: z.enum(["markdown", "text", "json"]).optional(),
+          model: z.string().optional(),
+          metadata: z.any().optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const save = await createSave(ctx.user.id, input);
+        return save;
+      }),
+
     list: protectedProcedure.query(async ({ ctx }) => {
       return await getSavesByUserId(ctx.user.id);
     }),
