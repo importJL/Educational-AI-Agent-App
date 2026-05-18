@@ -276,31 +276,79 @@ export async function executeTask(
   result: string;
   model: string;
   taskType: TaskType;
+  logs: Array<{
+    agent: string;
+    model: string;
+    messages: Message[];
+    responsePreview?: string;
+  }>;
 }> {
   try {
+    const logs: Array<{
+      agent: string;
+      model: string;
+      messages: Message[];
+      responsePreview?: string;
+    }> = [];
+
     // Step 1: Orchestrating agent analyzes the request
-    const orchestration = await orchestratingAgent(
-      userQuery || taskType,
-      taskType,
-      pageContent
-    );
+    const orchestrationMessages: Message[] = [
+      {
+        role: "system",
+        content: `You are an orchestrating agent that understands user queries and delegates tasks appropriately.\n      \nTask type: ${taskType}\nAvailable task types: Summarize, Extract Key Points, Generate Diagram/Infographic description, Custom Instructions\n\nAnalyze the user's request and the provided page content. Determine the best approach and provide clear instructions for the next agent.`,
+      },
+      {
+        role: "user",
+        content: `User query: ${userQuery || taskType}\n\nPage content:\n${pageContent}`,
+      },
+    ];
+
+    console.info("[AgentFlow] Calling Orchestrator with messages:", orchestrationMessages);
+    const orchestration = await callOpenRouter(MODELS.ORCHESTRATOR, orchestrationMessages);
+    console.info(`[AgentFlow] Orchestrator response (model ${orchestration.model}):`, orchestration.content);
+    logs.push({ agent: "orchestrator", model: orchestration.model, messages: orchestrationMessages, responsePreview: orchestration.content.slice(0, 400) });
 
     // Step 2: Textual tasks agent executes the main task
-    const taskResult = await textualTasksAgent(
-      taskType,
-      pageContent,
-      customInstructions
-    );
+    const textualSystemPromptBase = `You are an expert text analyst. Your task is to ${taskType.toLowerCase()} the provided content.`;
+    let textualSystemPrompt = textualSystemPromptBase;
+    if (taskType === "Summarize") {
+      textualSystemPrompt +=
+        " Provide a concise, well-structured summary that captures the key ideas and important details.";
+    } else if (taskType === "Extract Key Points") {
+      textualSystemPrompt +=
+        " Extract and list the most important points, insights, and takeaways from the content.";
+    } else if (taskType === "Generate Diagram/Infographic description") {
+      textualSystemPrompt +=
+        " Analyze the content and describe how it could be visualized as a diagram or infographic. Provide a detailed description of the structure, relationships, and visual elements.";
+    } else if (taskType === "Custom Instructions") {
+      textualSystemPrompt += ` Follow these custom instructions: ${customInstructions}`;
+    }
+    textualSystemPrompt += "\n\nFormat your response in clear, readable markdown with proper structure.";
+
+    const textualMessages: Message[] = [
+      { role: "system", content: textualSystemPrompt },
+      { role: "user", content: `Please analyze this content:\n\n${pageContent}` },
+    ];
+
+    console.info("[AgentFlow] Calling TextualTasks agent with messages:", textualMessages);
+    const taskResult = await callOpenRouter(MODELS.TEXTUAL, textualMessages);
+    console.info(`[AgentFlow] TextualTasks response (model ${taskResult.model}):`, taskResult.content);
+    logs.push({ agent: "textual", model: taskResult.model, messages: textualMessages, responsePreview: taskResult.content.slice(0, 400) });
 
     // Step 3: Optionally use rerouting agent for post-processing (for complex tasks)
     let finalResult = taskResult.content;
 
     if (taskType === "Generate Diagram/Infographic description") {
-      // Use rerouting agent to refine diagram descriptions
-      const refinement = await reroutingAgent(
-        taskResult.content,
-        "Refine this diagram/infographic description to be more visual and actionable. Include specific visual elements, layout suggestions, and data representation methods."
-      );
+      const reroutingMessages: Message[] = [
+        { role: "system", content: "You are an intermediary agent that processes context and applies transformations. Provide clear, structured output." },
+        { role: "user", content: `Context:\n${taskResult.content}\n\nInstruction:\nRefine this diagram/infographic description to be more visual and actionable. Include specific visual elements, layout suggestions, and data representation methods.` },
+      ];
+
+      console.info("[AgentFlow] Calling Rerouting agent with messages:", reroutingMessages);
+      const refinement = await callOpenRouter(MODELS.REROUTING, reroutingMessages);
+      console.info(`[AgentFlow] Rerouting response (model ${refinement.model}):`, refinement.content);
+      logs.push({ agent: "rerouting", model: refinement.model, messages: reroutingMessages, responsePreview: refinement.content.slice(0, 400) });
+
       finalResult = refinement.content;
     }
 
@@ -308,10 +356,81 @@ export async function executeTask(
       result: finalResult,
       model: MODELS.TEXTUAL,
       taskType,
+      logs,
     };
   } catch (error) {
     console.error("[Task Execution] Error:", error);
     throw error;
+  }
+}
+
+/**
+ * Execute task and stream incremental agent logs via an emit callback.
+ * emit(obj) will be called with objects { type: 'log'|'final'|'error', payload: any }
+ */
+export async function executeTaskStream(
+  taskType: TaskType,
+  pageContent: string,
+  emit: (obj: { type: string; payload: any }) => Promise<void>,
+  userQuery?: string,
+  customInstructions?: string
+): Promise<void> {
+  try {
+    // Orchestrator
+    const orchestrationMessages: Message[] = [
+      {
+        role: "system",
+        content: `You are an orchestrating agent that understands user queries and delegates tasks appropriately.\n\nTask type: ${taskType}`,
+      },
+      {
+        role: "user",
+        content: `User query: ${userQuery || taskType}\n\nPage content:\n${pageContent}`,
+      },
+    ];
+
+    console.info("[AgentStream] Calling Orchestrator");
+    const orchestration = await callOpenRouter(MODELS.ORCHESTRATOR, orchestrationMessages);
+    await emit({ type: "log", payload: { agent: "orchestrator", model: orchestration.model, messages: orchestrationMessages, responsePreview: orchestration.content.slice(0, 400) } });
+
+    // Textual task
+    let textualSystemPrompt = `You are an expert text analyst. Your task is to ${taskType.toLowerCase()} the provided content.`;
+    if (taskType === "Summarize") {
+      textualSystemPrompt += " Provide a concise, well-structured summary that captures the key ideas and important details.";
+    } else if (taskType === "Extract Key Points") {
+      textualSystemPrompt += " Extract and list the most important points, insights, and takeaways from the content.";
+    } else if (taskType === "Generate Diagram/Infographic description") {
+      textualSystemPrompt += " Analyze the content and describe how it could be visualized as a diagram or infographic.";
+    } else if (taskType === "Custom Instructions") {
+      textualSystemPrompt += ` Follow these custom instructions: ${customInstructions}`;
+    }
+    textualSystemPrompt += "\n\nFormat your response in clear, readable markdown with proper structure.";
+
+    const textualMessages: Message[] = [
+      { role: "system", content: textualSystemPrompt },
+      { role: "user", content: `Please analyze this content:\n\n${pageContent}` },
+    ];
+
+    console.info("[AgentStream] Calling TextualTasks");
+    const taskResult = await callOpenRouter(MODELS.TEXTUAL, textualMessages);
+    await emit({ type: "log", payload: { agent: "textual", model: taskResult.model, messages: textualMessages, responsePreview: taskResult.content.slice(0, 400) } });
+
+    let finalResult = taskResult.content;
+
+    if (taskType === "Generate Diagram/Infographic description") {
+      const reroutingMessages: Message[] = [
+        { role: "system", content: "You are an intermediary agent that processes context and applies transformations. Provide clear, structured output." },
+        { role: "user", content: `Context:\n${taskResult.content}\n\nInstruction:\nRefine this diagram/infographic description to be more visual and actionable.` },
+      ];
+      console.info("[AgentStream] Calling Rerouting");
+      const refinement = await callOpenRouter(MODELS.REROUTING, reroutingMessages);
+      await emit({ type: "log", payload: { agent: "rerouting", model: refinement.model, messages: reroutingMessages, responsePreview: refinement.content.slice(0, 400) } });
+      finalResult = refinement.content;
+    }
+
+    await emit({ type: "final", payload: { result: finalResult, model: MODELS.TEXTUAL, taskType } });
+  } catch (error) {
+    console.error("[AgentStream] Error:", error);
+    await emit({ type: "error", payload: { message: (error as Error).message || String(error) } });
   }
 }
 

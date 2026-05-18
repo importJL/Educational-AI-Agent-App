@@ -72,6 +72,12 @@ export default function DocumentViewer() {
   const [pageStart, setPageStart] = useState<number | undefined>();
   const [pageEnd, setPageEnd] = useState<number | undefined>();
   const [taskResult, setTaskResult] = useState("");
+  const [agentLogs, setAgentLogs] = useState<any[]>([]);
+  const [streamController, setStreamController] = useState<AbortController | null>(null);
+  const [fullModal, setFullModal] = useState<{ open: boolean; title?: string; content?: string }>({ open: false });
+  const [agentFlowCollapsed, setAgentFlowCollapsed] = useState(false);
+  const [perAgentCollapsed, setPerAgentCollapsed] = useState<Set<number>>(new Set());
+  const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [documentId, setDocumentId] = useState<number | null>(null);
   const [isConfigOpen, setIsConfigOpen] = useState(true);
@@ -343,17 +349,75 @@ export default function DocumentViewer() {
       setDocumentId(documentId);
 
       // Execute task
-      const result = await tasksExecute.mutateAsync({
-        documentId,
-        pageContent: pageContents ? undefined : contentToSend,
-        pageContents: pageContents,
-        taskType,
-        customInstructions: customInstructions || undefined,
-        pageStart,
-        pageEnd,
-      });
+      // Execute task via streaming endpoint
+      setAgentLogs([]);
+      setTaskResult("");
 
-      setTaskResult(result.result);
+      const controller = new AbortController();
+      setStreamController(controller);
+
+      try {
+        const resp = await fetch("/api/agents/execute-stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            documentId,
+            pageContent: pageContents ? undefined : contentToSend,
+            pageContents: pageContents,
+            taskType,
+            customInstructions: customInstructions || undefined,
+            pageStart,
+            pageEnd,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!resp.body) throw new Error("No response body from stream");
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let parts = buf.split("\n\n");
+          buf = parts.pop() || "";
+          for (const part of parts) {
+            const line = part.replace(/^data:\s*/i, "");
+            if (!line.trim()) continue;
+            try {
+              const obj = JSON.parse(line);
+              if (obj.type === "log") {
+                setAgentLogs(prev => [...prev, obj.payload]);
+              } else if (obj.type === "final") {
+                setTaskResult(obj.payload.result);
+              } else if (obj.type === "error") {
+                toast.error(`Agent error: ${obj.payload.message}`);
+              } else if (obj.type === "done") {
+                // finished
+              }
+            } catch (e) {
+              console.error("Failed to parse stream chunk", e, line);
+            }
+          }
+        }
+
+        // ensure final TRPC save call if needed (optional)
+        // we still set success toast after stream completes
+        toast.success("Task executed successfully");
+      } catch (err) {
+        if ((err as any).name === "AbortError") {
+          toast.error("Stream aborted");
+        } else {
+          console.error(err);
+          toast.error("Failed to execute task");
+        }
+      } finally {
+        setIsExecuting(false);
+        setStreamController(null);
+      }
       toast.success("Task executed successfully");
     } catch (error) {
       toast.error("Failed to execute task");
@@ -441,6 +505,7 @@ export default function DocumentViewer() {
   };
 
   return (
+    <>
     <ResizablePanelGroup
       direction="horizontal"
       className="h-full gap-1 p-2 bg-background"
@@ -729,73 +794,181 @@ export default function DocumentViewer() {
           {/* Task Result */}
           {taskResult && (
             <Card className="p-4 flex-1 flex flex-col min-h-0">
-              <button
-                onClick={() => setIsResultsOpen(!isResultsOpen)}
-                className="flex items-center justify-between w-full"
-              >
-                <h3 className="font-semibold text-foreground">Result</h3>
-                {isResultsOpen ? (
-                  <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                )}
-              </button>
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setIsResultsOpen(!isResultsOpen)} className="flex items-center gap-2">
+                    <h3 className="font-semibold text-foreground">Result</h3>
+                    {isResultsOpen ? (
+                      <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    )}
+                  </button>
+                  <button
+                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={() => setOutputCollapsed(prev => !prev)}
+                    title="Collapse/expand output"
+                  >
+                    {outputCollapsed ? "Show output" : "Hide output"}
+                  </button>
+                </div>
+                <div />
+              </div>
 
               {isResultsOpen && (
-                <>
-                  <div className="flex items-center justify-between mt-1">
-                    <div />
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleCopy}
-                        title="Copy to clipboard"
+                <div className="flex-1 flex gap-3 h-full">
+                  {/* Left: Agent Flow side panel */}
+                  {agentLogs && agentLogs.length > 0 && !agentFlowCollapsed ? (
+                    <div className="w-1/3 max-w-[420px] min-w-[220px] flex flex-col">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-foreground">Agent Flow</h4>
+                        <div className="flex gap-2">
+                          <button
+                            className="text-[12px] text-muted-foreground hover:underline"
+                            onClick={() => setPerAgentCollapsed(new Set(agentLogs.map((_, i) => i)))}
+                          >
+                            Collapse
+                          </button>
+                          <button
+                            className="text-[12px] text-muted-foreground hover:underline"
+                            onClick={() => setPerAgentCollapsed(new Set())}
+                          >
+                            Expand
+                          </button>
+                          <button
+                            className="text-[12px] text-muted-foreground hover:underline"
+                            onClick={() => setAgentFlowCollapsed(true)}
+                          >
+                            Hide
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="bg-surface rounded-md p-3 text-xs text-foreground overflow-auto flex-1">
+                        {agentLogs.map((log, idx) => {
+                          const collapsed = perAgentCollapsed.has(idx);
+                          return (
+                            <div key={idx} className="mb-3">
+                              <div className="flex items-center justify-between">
+                                <div className="font-semibold">{log.agent} (model: {log.model})</div>
+                                <div className="flex gap-2">
+                                  <button
+                                    className="text-[11px] text-muted-foreground hover:underline"
+                                    onClick={() => setFullModal({ open: true, title: `${log.agent} full messages`, content: log.messages?.map?.((m: any) => `${m.role}: ${m.content}`).join('\n\n---\n\n') })}
+                                  >
+                                    View full
+                                  </button>
+                                  <button
+                                    className="text-[11px] text-muted-foreground hover:underline"
+                                    onClick={() => setPerAgentCollapsed(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(idx)) next.delete(idx); else next.add(idx);
+                                      return next;
+                                    })}
+                                  >
+                                    {collapsed ? 'Expand' : 'Collapse'}
+                                  </button>
+                                </div>
+                              </div>
+                              {!collapsed && (
+                                <div className="text-muted-foreground text-[11px] mt-1">
+                                  <pre className="whitespace-pre-wrap text-xs bg-transparent p-0">{log.messages?.map?.((m: any) => `${m.role}: ${m.content}`).join('\n---\n')}</pre>
+                                  {log.responsePreview && (
+                                    <div className="mt-1 text-[11px] text-muted-foreground">Response preview: {log.responsePreview}</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-12 flex items-start">
+                      <button
+                        className="text-[12px] text-muted-foreground hover:underline"
+                        onClick={() => setAgentFlowCollapsed(false)}
                       >
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleSave}
-                        title="Save result"
-                      >
-                        <Bookmark className="w-4 h-4" />
-                      </Button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            title="Download result"
-                          >
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => handleDownload("json")}
-                          >
-                            Download as JSON
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDownload("text")}
-                          >
-                            Download as Text
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                        Show
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Right: main output area */}
+                  <div className="flex-1 flex flex-col">
+                    <div className="flex items-center justify-end gap-2 mb-2">
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleCopy}
+                          title="Copy to clipboard"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleSave}
+                          title="Save result"
+                        >
+                          <Bookmark className="w-4 h-4" />
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              title="Download result"
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleDownload("json")}>Download as JSON</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDownload("text")}>Download as Text</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto bg-muted rounded-lg p-4 text-sm text-foreground">
+                      {!outputCollapsed ? (
+                        <Streamdown>{taskResult}</Streamdown>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">Output hidden. Click "Show output" to reveal.</div>
+                      )}
                     </div>
                   </div>
-                  <div className="flex-1 overflow-y-auto bg-muted rounded-lg p-4 text-sm text-foreground">
-                    <Streamdown>{taskResult}</Streamdown>
-                  </div>
-                </>
+                </div>
               )}
             </Card>
           )}
         </div>
       </ResizablePanel>
     </ResizablePanelGroup>
+    {fullModal.open && (
+      <FullMessageModal state={fullModal} onClose={() => setFullModal({ open: false })} />
+    )}
+    </>
   );
 }
+
+// Full message modal (simple)
+function FullMessageModal({ state, onClose }: { state: { open: boolean; title?: string; content?: string }; onClose: () => void }) {
+  if (!state.open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="bg-card rounded-md p-4 z-10 max-w-3xl w-full max-h-[80vh] overflow-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold">{state.title}</h4>
+          <button onClick={onClose} className="text-sm text-muted-foreground">Close</button>
+        </div>
+        <pre className="whitespace-pre-wrap text-sm">{state.content}</pre>
+      </div>
+    </div>
+  );
+}
+
+export { FullMessageModal };

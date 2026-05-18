@@ -3,7 +3,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { ThemeProvider } from "./contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
+import { Sun, Moon } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 import Login from "./pages/Login";
 import DocumentViewer from "./pages/DocumentViewer";
 import Saves from "./pages/Saves";
@@ -15,6 +17,7 @@ type TabType = "Document Viewer" | "Saves" | "Settings";
 function AppContent() {
   const [activeTab, setActiveTab] = useState<TabType>("Document Viewer");
   const { user, loading } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   if (loading) {
     return (
@@ -48,6 +51,17 @@ function AppContent() {
               </h1>
             </div>
             <div className="flex gap-1">
+              <button
+                onClick={() => toggleTheme?.()}
+                className="p-2 rounded-md hover:bg-accent"
+                title="Toggle theme"
+              >
+                {theme === "dark" ? (
+                  <Sun className="w-5 h-5" />
+                ) : (
+                  <Moon className="w-5 h-5" />
+                )}
+              </button>
               {(["Document Viewer", "Saves", "Settings"] as const).map(tab => (
                 <button
                   key={tab}
@@ -87,9 +101,21 @@ function AppContent() {
 }
 
 function App() {
+  const prefsQuery = trpc.preferences.get.useQuery();
+
+  if (prefsQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const defaultTheme = prefsQuery.data?.theme || "light";
+
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="light">
+      <ThemeProvider defaultTheme={defaultTheme} switchable={true}>
         <TooltipProvider>
           <Toaster />
           <AppContent />

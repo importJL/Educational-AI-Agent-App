@@ -36,6 +36,13 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  // agent streaming routes
+  try {
+    const { registerAgentRoutes } = await import("./agentRoutes");
+    registerAgentRoutes(app);
+  } catch (e) {
+    console.warn("[Server] Could not register agent routes:", e);
+  }
   // tRPC API
   app.use(
     "/api/trpc",

@@ -156,7 +156,7 @@ export const appRouter = router({
             input.customInstructions
           );
 
-          return { success: true, result: taskResult.result };
+          return { success: true, result: taskResult.result, logs: taskResult.logs };
         } catch (error) {
           console.error("[Task Execution] Error:", error);
           throw new Error("Failed to execute task");

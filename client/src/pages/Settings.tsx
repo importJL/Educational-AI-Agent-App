@@ -12,10 +12,12 @@ import {
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export default function Settings() {
   const prefsQuery = trpc.preferences.get.useQuery();
   const updatePrefsMutation = trpc.preferences.update.useMutation();
+  const themeCtx = useTheme();
 
   const [theme, setTheme] = useState("light");
   const [fontSize, setFontSize] = useState("medium");
@@ -39,6 +41,8 @@ export default function Settings() {
         pdfZoomLevel,
         autoSaveResponses: autoSaveResponses ? 1 : 0,
       });
+      // apply theme immediately if context supports it
+      themeCtx.setTheme?.(theme as "light" | "dark");
       toast.success("Settings saved");
     } catch (error) {
       toast.error("Failed to save settings");
