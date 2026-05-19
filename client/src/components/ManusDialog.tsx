@@ -1,14 +1,5 @@
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
-
 interface ManusDialogProps {
   title?: string;
   logo?: string;
@@ -29,61 +20,60 @@ export function ManusDialog({
   const [internalOpen, setInternalOpen] = useState(open);
 
   useEffect(() => {
-    if (!onOpenChange) {
-      setInternalOpen(open);
-    }
+    if (!onOpenChange) setInternalOpen(open);
   }, [open, onOpenChange]);
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (onOpenChange) {
-      onOpenChange(nextOpen);
-    } else {
-      setInternalOpen(nextOpen);
-    }
-
-    if (!nextOpen) {
-      onClose?.();
-    }
+  const handleClose = () => {
+    if (onOpenChange) onOpenChange(false);
+    else setInternalOpen(false);
+    onClose?.();
   };
 
-  return (
-    <Dialog
-      open={onOpenChange ? open : internalOpen}
-      onOpenChange={handleOpenChange}
-    >
-      <DialogContent className="py-5 bg-[#f8f8f7] rounded-[20px] w-[400px] shadow-[0px_4px_11px_0px_rgba(0,0,0,0.08)] border border-[rgba(0,0,0,0.08)] backdrop-blur-2xl p-0 gap-0 text-center">
-        <div className="flex flex-col items-center gap-2 p-5 pt-12">
-          {logo ? (
-            <div className="w-16 h-16 bg-white rounded-xl border border-[rgba(0,0,0,0.08)] flex items-center justify-center">
-              <img
-                src={logo}
-                alt="Dialog graphic"
-                className="w-10 h-10 rounded-md"
-              />
-            </div>
-          ) : null}
+  const isOpen = onOpenChange ? open : internalOpen;
+  if (!isOpen) return null;
 
-          {/* Title and subtitle */}
-          {title ? (
-            <DialogTitle className="text-xl font-semibold text-[#34322d] leading-[26px] tracking-[-0.44px]">
-              {title}
-            </DialogTitle>
-          ) : null}
-          <DialogDescription className="text-sm text-[#858481] leading-5 tracking-[-0.154px]">
+  return (
+    <div className="modal-overlay" onClick={handleClose} style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+      zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center"
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "#f8f8f7", borderRadius: 20, width: 400, maxWidth: "90vw",
+        padding: "32px 20px 20px",
+        boxShadow: "0 4px 11px rgba(0,0,0,0.08)",
+        border: "1px solid rgba(0,0,0,0.08)",
+        textAlign: "center"
+      }}>
+        <div className="flex flex-col items-center gap-2" style={{ padding: "0 20px" }}>
+          {logo && (
+            <div style={{
+              width: 64, height: 64, background: "#fff", borderRadius: 12,
+              border: "1px solid rgba(0,0,0,0.08)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              marginBottom: 8
+            }}>
+              <img src={logo} alt="" style={{ width: 40, height: 40, borderRadius: 8 }} />
+            </div>
+          )}
+          {title && <h5 style={{ fontWeight: 600, color: "#34322d", margin: 0 }}>{title}</h5>}
+          <p style={{ fontSize: 14, color: "#858481", margin: 0 }}>
             Please login with Manus to continue
-          </DialogDescription>
+          </p>
         </div>
 
-        <DialogFooter className="px-5 py-5">
-          {/* Login button */}
-          <Button
+        <div style={{ padding: "20px 20px 0" }}>
+          <button
             onClick={onLogin}
-            className="w-full h-10 bg-[#1a1a19] hover:bg-[#1a1a19]/90 text-white rounded-[10px] text-sm font-medium leading-5 tracking-[-0.154px]"
+            className="btn waves-effect waves-light"
+            style={{
+              width: "100%", height: 40, background: "#1a1a19", borderRadius: 10,
+              fontSize: 14, fontWeight: 500, lineHeight: "40px", padding: 0
+            }}
           >
             Login with Manus
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

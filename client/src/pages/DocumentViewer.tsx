@@ -1,41 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Loader2,
-  Upload,
-  X,
-  ZoomIn,
-  ZoomOut,
-  Copy,
-  Download,
-  Bookmark,
-  LayoutGrid,
-  FileText,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import {
-  ResizablePanelGroup,
-  ResizablePanel,
-  ResizableHandle,
-} from "@/components/ui/resizable";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import * as pdfjsLib from "pdfjs-dist";
@@ -92,7 +57,6 @@ export default function DocumentViewer() {
   const renderTasksRef = useRef<Map<number, RenderTask>>(new Map());
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isRenderingRef = useRef(false);
 
   const documentsUpload = trpc.documents.upload.useMutation();
   const tasksExecute = trpc.tasks.execute.useMutation();
@@ -103,7 +67,6 @@ export default function DocumentViewer() {
     },
   });
 
-  // Load PDF
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
@@ -130,21 +93,15 @@ export default function DocumentViewer() {
     reader.readAsArrayBuffer(selectedFile);
   };
 
-  // Render PDF page with proper cancellation
   const renderPage = async (
     pdf: pdfjsLib.PDFDocumentProxy,
     pageNum: number,
-    waitForExisting: boolean = false
   ) => {
     try {
       const existingTask = renderTasksRef.current.get(pageNum);
       if (existingTask) {
         existingTask.cancel();
-        if (waitForExisting) {
-          try {
-            await existingTask.promise;
-          } catch {}
-        }
+        try { await existingTask.promise; } catch {}
       }
 
       const page = await pdf.getPage(pageNum);
@@ -178,7 +135,6 @@ export default function DocumentViewer() {
     }
   };
 
-  // Setup IntersectionObserver for lazy loading and page tracking
   useEffect(() => {
     if (!scrollContainerRef.current || !useLazyLoading) return;
 
@@ -217,16 +173,13 @@ export default function DocumentViewer() {
       { root: scrollContainerRef.current, rootMargin: "100px" }
     );
 
-    pageRefs.current.forEach((canvas, pageNum) => {
+    pageRefs.current.forEach((canvas) => {
       observerRef.current?.observe(canvas);
     });
 
-    return () => {
-      observerRef.current?.disconnect();
-    };
+    return () => observerRef.current?.disconnect();
   }, [pdfDoc, useLazyLoading, totalPages, renderedPages]);
 
-  // Render current page if needed in single page mode
   useEffect(() => {
     if (viewMode === "single" && pdfDoc && !renderedPages.has(currentPage)) {
       renderPage(pdfDoc, currentPage);
@@ -234,7 +187,6 @@ export default function DocumentViewer() {
     }
   }, [currentPage, viewMode, pdfDoc]);
 
-  // Render all pages on initial load (non-lazy)
   useEffect(() => {
     if (!pdfDoc || useLazyLoading) return;
     const renderAll = async () => {
@@ -248,7 +200,6 @@ export default function DocumentViewer() {
     renderAll();
   }, [pdfDoc]);
 
-  // Track container size for fit calculation
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -263,7 +214,6 @@ export default function DocumentViewer() {
     return () => observer.disconnect();
   }, [viewMode]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       renderTasksRef.current.forEach(task => task.cancel());
@@ -272,7 +222,6 @@ export default function DocumentViewer() {
     };
   }, []);
 
-  // Scroll wheel zoom with non-passive listener
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -289,7 +238,6 @@ export default function DocumentViewer() {
     return () => container.removeEventListener("wheel", handleWheelEvent);
   }, [pdfDoc]);
 
-  // Helper function to extract text from a specific page
   const extractPageText = async (
     pdf: pdfjsLib.PDFDocumentProxy,
     pageNum: number
@@ -299,7 +247,6 @@ export default function DocumentViewer() {
     return textContent.items.map((item: any) => item.str).join(" ");
   };
 
-  // Execute task
   const handleExecuteTask = async () => {
     if (!file || !pageContent) {
       toast.error("Please load a PDF first");
@@ -312,14 +259,7 @@ export default function DocumentViewer() {
       let contentToSend: string;
       let pageContents: string[] | undefined;
 
-      // Handle multi-page extraction if page range is specified
-      if (
-        pageStart !== undefined &&
-        pageEnd !== undefined &&
-        pageStart !== pageEnd &&
-        pdfDoc
-      ) {
-        // Extract text from each page in the range
+      if (pageStart !== undefined && pageEnd !== undefined && pageStart !== pageEnd && pdfDoc) {
         const contents: string[] = [];
         for (let p = pageStart; p <= pageEnd; p++) {
           const text = await extractPageText(pdfDoc, p);
@@ -328,7 +268,6 @@ export default function DocumentViewer() {
         pageContents = contents;
         contentToSend = contents.join("\n\n---\n\n");
       } else {
-        // Single page or no range: use current page content
         contentToSend = pageContent;
       }
 
@@ -348,8 +287,6 @@ export default function DocumentViewer() {
       documentId = uploadResult.document!.id;
       setDocumentId(documentId);
 
-      // Execute task
-      // Execute task via streaming endpoint
       setAgentLogs([]);
       setTaskResult("");
 
@@ -395,17 +332,12 @@ export default function DocumentViewer() {
                 setTaskResult(obj.payload.result);
               } else if (obj.type === "error") {
                 toast.error(`Agent error: ${obj.payload.message}`);
-              } else if (obj.type === "done") {
-                // finished
               }
             } catch (e) {
               console.error("Failed to parse stream chunk", e, line);
             }
           }
         }
-
-        // ensure final TRPC save call if needed (optional)
-        // we still set success toast after stream completes
         toast.success("Task executed successfully");
       } catch (err) {
         if ((err as any).name === "AbortError") {
@@ -418,7 +350,6 @@ export default function DocumentViewer() {
         setIsExecuting(false);
         setStreamController(null);
       }
-      toast.success("Task executed successfully");
     } catch (error) {
       toast.error("Failed to execute task");
       console.error(error);
@@ -427,7 +358,6 @@ export default function DocumentViewer() {
     }
   };
 
-  // Handle page navigation with scroll
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     const canvas = pageRefs.current.get(page);
@@ -436,24 +366,17 @@ export default function DocumentViewer() {
     }
   };
 
-  // Scroll detection for zoom
   const handleScroll = useCallback(() => {
     isScrollingRef.current = true;
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
-    scrollTimeoutRef.current = setTimeout(() => {
-      isScrollingRef.current = false;
-    }, 150);
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => { isScrollingRef.current = false; }, 150);
   }, []);
 
-  // Copy to clipboard
   const handleCopy = () => {
     navigator.clipboard.writeText(taskResult);
     toast.success("Copied to clipboard");
   };
 
-  // Save result
   const handleSave = async () => {
     if (!documentId || !file) {
       toast.error("No document or result to save");
@@ -477,26 +400,13 @@ export default function DocumentViewer() {
     }
   };
 
-  // Download result
   const handleDownload = (format: "json" | "text") => {
-    const content =
-      format === "json"
-        ? JSON.stringify(
-            { taskType, result: taskResult, date: new Date() },
-            null,
-            2
-          )
-        : taskResult;
-
+    const content = format === "json"
+      ? JSON.stringify({ taskType, result: taskResult, date: new Date() }, null, 2)
+      : taskResult;
     const element = document.createElement("a");
-    element.setAttribute(
-      "href",
-      `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`
-    );
-    element.setAttribute(
-      "download",
-      `result.${format === "json" ? "json" : "txt"}`
-    );
+    element.setAttribute("href", `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`);
+    element.setAttribute("download", `result.${format === "json" ? "json" : "txt"}`);
     element.style.display = "none";
     document.body.appendChild(element);
     element.click();
@@ -506,110 +416,58 @@ export default function DocumentViewer() {
 
   return (
     <>
-    <ResizablePanelGroup
-      direction="horizontal"
-      className="h-full gap-1 p-2 bg-background"
-    >
-      {/* Left Panel - PDF Viewer */}
-      <ResizablePanel defaultSize={60} minSize={30}>
-        <div className="flex flex-col gap-4 h-full pr-1">
-          <Card className="flex-1 flex flex-col p-4 overflow-hidden">
-            {!pdfDoc ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-4 border-2 border-dashed border-border rounded-lg">
-                <Upload className="w-12 h-12 text-muted-foreground" />
-                <div className="text-center">
-                  <p className="font-medium text-foreground mb-2">
-                    Upload a PDF Document
-                  </p>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Drag and drop or click to select
-                  </p>
+      <div className="resizable-panel-group" data-direction="horizontal" style={{ height: "100%", gap: 4, padding: 8, background: "#f5f5f5" }}>
+        {/* Left Panel - PDF Viewer */}
+        <div style={{ flex: "60 1 0%", overflow: "hidden", paddingRight: 4 }}>
+          <div className="card" style={{ height: "100%", display: "flex", flexDirection: "column", margin: 0 }}>
+            <div className="card-content" style={{ flex: 1, display: "flex", flexDirection: "column", padding: 16, overflow: "hidden" }}>
+              {!pdfDoc ? (
+                <div className="flex flex-col items-center justify-center" style={{
+                  flex: 1, border: "2px dashed #ccc", borderRadius: 8,
+                  gap: 16
+                }}>
+                  <MaterialIcon icon="Upload" className="grey-text" style={{ fontSize: 48 }} />
+                  <div className="center-align">
+                    <p style={{ fontWeight: 500, marginBottom: 8 }}>Upload a PDF Document</p>
+                    <p className="grey-text" style={{ fontSize: 13, marginBottom: 16 }}>Drag and drop or click to select</p>
+                  </div>
+                  <button className="btn waves-effect waves-light" onClick={() => fileInputRef.current?.click()}>
+                    Choose File
+                  </button>
+                  <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileUpload} className="hidden" />
                 </div>
-                <Button onClick={() => fileInputRef.current?.click()}>
-                  Choose File
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </div>
-            ) : (
-              <>
-                {/* PDF Controls */}
-                <div className="flex items-center justify-between gap-2 mb-4 pb-4 border-b border-border">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handlePageChange(Math.max(1, currentPage - 1))
-                      }
-                      disabled={currentPage === 1}
-                      title="Previous page"
-                    >
-                      <ChevronUp className="w-4 h-4" />
-                    </Button>
-                    <span className="text-sm text-muted-foreground min-w-[100px] text-center">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        handlePageChange(Math.min(totalPages, currentPage + 1))
-                      }
-                      disabled={currentPage === totalPages}
-                      title="Next page"
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setZoomLevel(Math.max(25, zoomLevel - 25))}
-                      title="Zoom out (Shift+Scroll)"
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                    </Button>
-                    <span className="text-sm text-muted-foreground w-14 text-center">
-                      {zoomLevel}%
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setZoomLevel(Math.min(400, zoomLevel + 25))}
-                      title="Zoom in (Shift+Scroll)"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-1 border-l border-border pl-2">
-                    <Button
-                      variant={viewMode === "single" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setViewMode("single")}
-                      title="Single page view"
-                    >
-                      <FileText className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant={viewMode === "multiple" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setViewMode("multiple")}
-                      title="Multiple page view"
-                    >
-                      <LayoutGrid className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
+              ) : (
+                <>
+                  <div className="flex items-center justify-between" style={{ marginBottom: 16, paddingBottom: 12, borderBottom: "1px solid #e0e0e0", gap: 8, flexWrap: "wrap" }}>
+                    <div className="flex items-center gap-2">
+                      <button className="btn-flat btn-small" onClick={() => handlePageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>
+                        <MaterialIcon icon="ChevronUp" />
+                      </button>
+                      <span className="grey-text" style={{ fontSize: 13, minWidth: 100, textAlign: "center" }}>
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <button className="btn-flat btn-small" onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>
+                        <MaterialIcon icon="ChevronDown" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button className="btn-flat btn-small" onClick={() => setZoomLevel(Math.max(25, zoomLevel - 25))}>
+                        <MaterialIcon icon="ZoomOut" />
+                      </button>
+                      <span className="grey-text" style={{ fontSize: 13, width: 56, textAlign: "center" }}>{zoomLevel}%</span>
+                      <button className="btn-flat btn-small" onClick={() => setZoomLevel(Math.min(400, zoomLevel + 25))}>
+                        <MaterialIcon icon="ZoomIn" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1" style={{ borderLeft: "1px solid #e0e0e0", paddingLeft: 8 }}>
+                      <button className={`btn-flat btn-small ${viewMode === "single" ? "blue lighten-4" : ""}`} onClick={() => setViewMode("single")}>
+                        <MaterialIcon icon="FileText" />
+                      </button>
+                      <button className={`btn-flat btn-small ${viewMode === "multiple" ? "blue lighten-4" : ""}`} onClick={() => setViewMode("multiple")}>
+                        <MaterialIcon icon="LayoutGrid" />
+                      </button>
+                    </div>
+                    <button className="btn-flat btn-small" onClick={() => {
                       renderTasksRef.current.forEach(task => task.cancel());
                       renderTasksRef.current.clear();
                       setFile(null);
@@ -619,320 +477,282 @@ export default function DocumentViewer() {
                       setCurrentPage(1);
                       setTotalPages(0);
                       setRenderedPages(new Set());
-                    }}
-                  >
-                    <X className="w-4 h-4 mr-2" />
-                    Clear
-                  </Button>
-                </div>
-
-                {/* PDF Canvas */}
-                <div
-                  ref={scrollContainerRef}
-                  className={`flex-1 overflow-auto flex ${viewMode === "single" ? "items-center justify-center" : "flex-col items-center"} gap-4 py-4 bg-muted rounded-lg`}
-                  onScroll={handleScroll}
-                >
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => {
-                    const isSingleView = viewMode === "single";
-                    const isVisible = !isSingleView || pageNum === currentPage;
-                    const baseSize = pageSizesRef.current.get(pageNum);
-                    const zoomScale = zoomLevel / 100;
-                    const fitScale = baseSize && containerSize.width > 0
-                      ? (isSingleView
-                          ? Math.min(
-                              Math.max(containerSize.width - 40, 100) / baseSize.width,
-                              Math.max(containerSize.height - 40, 100) / baseSize.height
-                            )
-                          : Math.max(containerSize.width - 40, 100) / baseSize.width)
-                      : 1;
-                    const displayScale = zoomScale * fitScale;
-                    const canvasStyle: React.CSSProperties = {
-                      display: isVisible ? "block" : "none",
-                    };
-                    if (baseSize) {
-                      canvasStyle.width = Math.round(baseSize.width * displayScale);
-                      canvasStyle.height = Math.round(baseSize.height * displayScale);
-                    } else {
-                      canvasStyle.minHeight = 200;
-                    }
-                    return (
-                      <canvas
-                        key={pageNum}
-                        ref={el => { if (el) pageRefs.current.set(pageNum, el); }}
-                        data-page={pageNum}
-                        className="shadow-lg bg-white"
-                        style={canvasStyle}
-                      />
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </Card>
-        </div>
-      </ResizablePanel>
-
-      <ResizableHandle withHandle />
-
-      {/* Right Panel - Task Execution */}
-      <ResizablePanel defaultSize={40} minSize={20} maxSize={50}>
-        <div className="flex flex-col gap-2 overflow-y-auto h-full pl-1">
-          {/* Task Selection */}
-          <Card className="p-4">
-            <button
-              onClick={() => setIsConfigOpen(!isConfigOpen)}
-              className="flex items-center justify-between w-full"
-            >
-              <h3 className="font-semibold text-foreground">
-                Task Configuration
-              </h3>
-              {isConfigOpen ? (
-                <ChevronUp className="w-4 h-4 text-muted-foreground" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
-              )}
-            </button>
-
-            {isConfigOpen && (
-              <div className="space-y-3 mt-3">
-                {/* Page Range */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-2 block">
-                    Page Range
-                  </label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="number"
-                      placeholder="Start"
-                      value={pageStart || ""}
-                      onChange={e =>
-                        setPageStart(
-                          e.target.value ? parseInt(e.target.value) : undefined
-                        )
-                      }
-                      min={1}
-                      max={totalPages}
-                      className="flex-1"
-                    />
-                    <Input
-                      type="number"
-                      placeholder="End"
-                      value={pageEnd || ""}
-                      onChange={e =>
-                        setPageEnd(
-                          e.target.value ? parseInt(e.target.value) : undefined
-                        )
-                      }
-                      min={1}
-                      max={totalPages}
-                      className="flex-1"
-                    />
+                    }}>
+                      <MaterialIcon icon="X" className="mr-1" /> Clear
+                    </button>
                   </div>
-                </div>
 
-                {/* Task Type */}
-                <div>
-                  <label className="text-sm font-medium text-foreground mb-2 block">
-                    Task Type
-                  </label>
-                  <Select
-                    value={taskType}
-                    onValueChange={value => setTaskType(value as TaskType)}
+                  <div
+                    ref={scrollContainerRef}
+                    className="flex-1 overflow-auto"
+                    style={{
+                      display: "flex",
+                      flexDirection: viewMode === "single" ? "column" : "column",
+                      alignItems: viewMode === "single" ? "center" : "center",
+                      gap: 16, padding: "16px 0",
+                      background: "#f0f0f0", borderRadius: 8
+                    }}
+                    onScroll={handleScroll}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Summarize">Summarize</SelectItem>
-                      <SelectItem value="Extract Key Points">
-                        Extract Key Points
-                      </SelectItem>
-                      <SelectItem value="Generate Diagram/Infographic description">
-                        Generate Diagram/Infographic description
-                      </SelectItem>
-                      <SelectItem value="Custom Instructions">
-                        Custom Instructions
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => {
+                      const isSingleView = viewMode === "single";
+                      const isVisible = !isSingleView || pageNum === currentPage;
+                      const baseSize = pageSizesRef.current.get(pageNum);
+                      const zoomScale = zoomLevel / 100;
+                      const fitScale = baseSize && containerSize.width > 0
+                        ? (isSingleView
+                            ? Math.min(
+                                Math.max(containerSize.width - 40, 100) / baseSize.width,
+                                Math.max(containerSize.height - 40, 100) / baseSize.height
+                              )
+                            : Math.max(containerSize.width - 40, 100) / baseSize.width)
+                        : 1;
+                      const displayScale = zoomScale * fitScale;
+                      const canvasStyle: React.CSSProperties = {
+                        display: isVisible ? "block" : "none",
+                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)"
+                      };
+                      if (baseSize) {
+                        canvasStyle.width = Math.round(baseSize.width * displayScale);
+                        canvasStyle.height = Math.round(baseSize.height * displayScale);
+                      } else {
+                        canvasStyle.minHeight = 200;
+                      }
+                      return (
+                        <canvas
+                          key={pageNum}
+                          ref={el => { if (el) pageRefs.current.set(pageNum, el); }}
+                          data-page={pageNum}
+                          style={canvasStyle}
+                        />
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
 
-                {/* Custom Instructions */}
-                {taskType === "Custom Instructions" && (
-                  <div>
-                    <label className="text-sm font-medium text-foreground mb-2 block">
-                      Your Instructions
-                    </label>
-                    <Textarea
-                      placeholder="Enter your custom instructions for the AI..."
-                      value={customInstructions}
-                      onChange={e => setCustomInstructions(e.target.value)}
-                      className="min-h-24"
-                    />
+        <div className="resizable-handle" />
+
+        {/* Right Panel - Task Execution */}
+        <div style={{ flex: "40 1 0%", minWidth: 200, maxWidth: "50%", overflow: "hidden" }}>
+          <div className="flex flex-col gap-2" style={{ height: "100%", overflow: "auto", paddingLeft: 4 }}>
+            {/* Task Configuration */}
+            <div className="card" style={{ margin: 0 }}>
+              <div className="card-content" style={{ padding: 16 }}>
+                <button
+                  onClick={() => setIsConfigOpen(!isConfigOpen)}
+                  className="flex items-center justify-between w-full"
+                  style={{ background: "none", border: "none", cursor: "pointer", width: "100%", padding: 0 }}
+                >
+                  <span className="card-title" style={{ fontSize: 16, margin: 0, fontWeight: 600 }}>Task Configuration</span>
+                  <MaterialIcon icon={isConfigOpen ? "ChevronUp" : "ChevronDown"} className="grey-text" />
+                </button>
+
+                {isConfigOpen && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>Page Range</label>
+                      <div className="flex gap-2">
+                        <div className="input-field" style={{ flex: 1, margin: 0 }}>
+                          <input
+                            type="number" placeholder="Start"
+                            value={pageStart || ""}
+                            onChange={e => setPageStart(e.target.value ? parseInt(e.target.value) : undefined)}
+                            min={1} max={totalPages}
+                          />
+                        </div>
+                        <div className="input-field" style={{ flex: 1, margin: 0 }}>
+                          <input
+                            type="number" placeholder="End"
+                            value={pageEnd || ""}
+                            onChange={e => setPageEnd(e.target.value ? parseInt(e.target.value) : undefined)}
+                            min={1} max={totalPages}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>Task Type</label>
+                      <div className="input-field" style={{ margin: 0 }}>
+                        <select
+                          className="browser-default"
+                          value={taskType}
+                          onChange={e => setTaskType(e.target.value as TaskType)}
+                          style={{ display: "block" }}
+                        >
+                          <option value="Summarize">Summarize</option>
+                          <option value="Extract Key Points">Extract Key Points</option>
+                          <option value="Generate Diagram/Infographic description">Generate Diagram/Infographic description</option>
+                          <option value="Custom Instructions">Custom Instructions</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {taskType === "Custom Instructions" && (
+                      <div style={{ marginBottom: 12 }}>
+                        <label style={{ fontSize: 13, fontWeight: 500, display: "block", marginBottom: 8 }}>Your Instructions</label>
+                        <div className="input-field" style={{ margin: 0 }}>
+                          <textarea
+                            className="materialize-textarea"
+                            placeholder="Enter your custom instructions for the AI..."
+                            value={customInstructions}
+                            onChange={e => setCustomInstructions(e.target.value)}
+                            style={{ minHeight: 96 }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      className="btn waves-effect waves-light w-full"
+                      onClick={handleExecuteTask}
+                      disabled={isExecuting || !pdfDoc}
+                      style={{ width: "100%" }}
+                    >
+                      {isExecuting ? (
+                        <>
+                          <div className="preloader-wrapper small active" style={{ width: 20, height: 20, display: "inline-block", marginRight: 8, verticalAlign: "middle" }}>
+                            <div className="spinner-layer spinner-white-only">
+                              <div className="circle-clipper left"><div className="circle" /></div>
+                              <div className="gap-patch"><div className="circle" /></div>
+                              <div className="circle-clipper right"><div className="circle" /></div>
+                            </div>
+                          </div>
+                          Executing...
+                        </>
+                      ) : "Execute Task"}
+                    </button>
                   </div>
                 )}
-
-                {/* Execute Button */}
-                <Button
-                  onClick={handleExecuteTask}
-                  disabled={isExecuting || !pdfDoc}
-                  className="w-full"
-                >
-                  {isExecuting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Executing...
-                    </>
-                  ) : (
-                    "Execute Task"
-                  )}
-                </Button>
               </div>
-            )}
-          </Card>
+            </div>
 
-          {/* Task Result */}
-          {taskResult && (
-            <Card className="p-4 flex-1 flex flex-col min-h-0">
-              <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setIsResultsOpen(!isResultsOpen)} className="flex items-center gap-2">
-                    <h3 className="font-semibold text-foreground">Result</h3>
-                    {isResultsOpen ? (
-                      <ChevronUp className="w-4 h-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                    )}
-                  </button>
-                  <button
-                    className="text-xs text-muted-foreground hover:underline"
-                    onClick={() => setOutputCollapsed(prev => !prev)}
-                    title="Collapse/expand output"
-                  >
-                    {outputCollapsed ? "Show output" : "Hide output"}
-                  </button>
-                </div>
-                <div />
-              </div>
-
-              {isResultsOpen && (
-                <div className="flex-1 flex gap-3 h-full">
-                  {/* Left: Agent Flow side panel */}
-                  {agentLogs && agentLogs.length > 0 && !agentFlowCollapsed ? (
-                    <div className="w-1/3 max-w-[420px] min-w-[220px] flex flex-col">
-                      <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
-                        <h4 className="text-sm font-semibold text-foreground">Agent Flow</h4>
-                        <button
-                          className="text-[12px] text-muted-foreground hover:underline transition-colors"
-                          onClick={() => setAgentFlowCollapsed(true)}
-                          title="Hide Agent Flow panel"
-                        >
-                          Hide
-                        </button>
-                      </div>
-                      <div className="overflow-auto flex-1 pr-2">
-                        <AgentFlowViewer
-                          logs={agentLogs}
-                          onViewFullMessages={(log) =>
-                            setFullModal({
-                              open: true,
-                              title: `${log.agent} - Full Messages`,
-                              content: log.messages
-                                ?.map((m: any) => `[${m.role.toUpperCase()}]\n${m.content}`)
-                                .join("\n\n---\n\n"),
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-start gap-2 pt-1">
-                      <div className="text-xs font-medium text-muted-foreground px-2">Agent Flow</div>
+            {/* Task Result */}
+            {taskResult && (
+              <div className="card" style={{ flex: 1, display: "flex", flexDirection: "column", margin: 0, minHeight: 0 }}>
+                <div className="card-content" style={{ flex: 1, display: "flex", flexDirection: "column", padding: 16, minHeight: 0 }}>
+                  <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setIsResultsOpen(!isResultsOpen)} className="flex items-center gap-2" style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        <span className="card-title" style={{ fontSize: 16, margin: 0, fontWeight: 600 }}>Result</span>
+                        <MaterialIcon icon={isResultsOpen ? "ChevronUp" : "ChevronDown"} className="grey-text" />
+                      </button>
                       <button
-                        className="text-[12px] text-muted-foreground hover:underline transition-colors px-2"
-                        onClick={() => setAgentFlowCollapsed(false)}
-                        title="Show Agent Flow panel"
+                        className="grey-text"
+                        style={{ fontSize: 12, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                        onClick={() => setOutputCollapsed(prev => !prev)}
                       >
-                        Show
+                        {outputCollapsed ? "Show output" : "Hide output"}
                       </button>
                     </div>
-                  )}
+                  </div>
 
-                  {/* Right: main output area */}
-                  <div className="flex-1 flex flex-col">
-                    <div className="flex items-center justify-end gap-2 mb-2">
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCopy}
-                          title="Copy to clipboard"
-                        >
-                          <Copy className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleSave}
-                          title="Save result"
-                        >
-                          <Bookmark className="w-4 h-4" />
-                        </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              title="Download result"
+                  {isResultsOpen && (
+                    <div className="flex flex-row" style={{ flex: 1, gap: 12, minHeight: 0 }}>
+                      {/* Left: Agent Flow side panel */}
+                      {agentLogs && agentLogs.length > 0 && !agentFlowCollapsed ? (
+                        <div style={{ width: "33%", minWidth: 220, display: "flex", flexDirection: "column" }}>
+                          <div className="flex items-center justify-between" style={{ marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid #e0e0e0" }}>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>Agent Flow</span>
+                            <button
+                              className="grey-text"
+                              style={{ fontSize: 11, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+                              onClick={() => setAgentFlowCollapsed(true)}
                             >
-                              <Download className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleDownload("json")}>Download as JSON</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDownload("text")}>Download as Text</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                              Hide
+                            </button>
+                          </div>
+                          <div className="overflow-auto flex-1" style={{ paddingRight: 8 }}>
+                            <AgentFlowViewer
+                              logs={agentLogs}
+                              onViewFullMessages={(log) =>
+                                setFullModal({
+                                  open: true,
+                                  title: `${log.agent} - Full Messages`,
+                                  content: log.messages
+                                    ?.map((m: any) => `[${m.role.toUpperCase()}]\n${m.content}`)
+                                    .join("\n\n---\n\n"),
+                                })
+                              }
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-start gap-2" style={{ paddingTop: 4 }}>
+                          <span className="grey-text" style={{ fontSize: 12, fontWeight: 500, padding: "0 8px" }}>Agent Flow</span>
+                          <button
+                            className="grey-text"
+                            style={{ fontSize: 11, background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: "0 8px" }}
+                            onClick={() => setAgentFlowCollapsed(false)}
+                          >
+                            Show
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Right: main output area */}
+                      <div className="flex-1 flex flex-col" style={{ minWidth: 0 }}>
+                        <div className="flex items-center justify-end" style={{ gap: 8, marginBottom: 8 }}>
+                          <button className="btn-flat btn-small" onClick={handleCopy}>
+                            <MaterialIcon icon="Copy" />
+                          </button>
+                          <button className="btn-flat btn-small" onClick={handleSave}>
+                            <MaterialIcon icon="Bookmark" />
+                          </button>
+                          <div className="dropdown-wrapper" style={{ position: "relative", display: "inline-block" }}>
+                            <button className="btn-flat btn-small dropdown-trigger" data-target="download-dropdown">
+                              <MaterialIcon icon="Download" />
+                            </button>
+                            <ul id="download-dropdown" className="dropdown-content" style={{ minWidth: 180 }}>
+                              <li><a href="#!" onClick={() => handleDownload("json")}>Download as JSON</a></li>
+                              <li><a href="#!" onClick={() => handleDownload("text")}>Download as Text</a></li>
+                            </ul>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto" style={{
+                          background: "#f0f0f0", borderRadius: 8, padding: 16, fontSize: 14
+                        }}>
+                          {!outputCollapsed ? (
+                            <Streamdown>{taskResult}</Streamdown>
+                          ) : (
+                            <span className="grey-text" style={{ fontSize: 13 }}>Output hidden. Click "Show output" to reveal.</span>
+                          )}
+                        </div>
                       </div>
                     </div>
-
-                    <div className="flex-1 overflow-y-auto bg-muted rounded-lg p-4 text-sm text-foreground">
-                      {!outputCollapsed ? (
-                        <Streamdown>{taskResult}</Streamdown>
-                      ) : (
-                        <div className="text-sm text-muted-foreground">Output hidden. Click "Show output" to reveal.</div>
-                      )}
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
-            </Card>
-          )}
+              </div>
+            )}
+          </div>
         </div>
-      </ResizablePanel>
-    </ResizablePanelGroup>
-    {fullModal.open && (
-      <FullMessageModal state={fullModal} onClose={() => setFullModal({ open: false })} />
-    )}
+      </div>
+
+      {fullModal.open && (
+        <div className="modal-overlay" onClick={() => setFullModal({ open: false })} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+          zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center"
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "#fff", borderRadius: 8, padding: 16, maxWidth: 720,
+            width: "90%", maxHeight: "80vh", overflow: "auto",
+            boxShadow: "0 16px 48px rgba(0,0,0,0.2)"
+          }}>
+            <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
+              <h5 style={{ margin: 0 }}>{fullModal.title}</h5>
+              <button className="btn-flat" onClick={() => setFullModal({ open: false })}>Close</button>
+            </div>
+            <pre className="whitespace-pre-wrap" style={{ fontSize: 13 }}>{fullModal.content}</pre>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-// Full message modal (simple)
-function FullMessageModal({ state, onClose }: { state: { open: boolean; title?: string; content?: string }; onClose: () => void }) {
-  if (!state.open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="bg-card rounded-md p-4 z-10 max-w-3xl w-full max-h-[80vh] overflow-auto">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="font-semibold">{state.title}</h4>
-          <button onClick={onClose} className="text-sm text-muted-foreground">Close</button>
-        </div>
-        <pre className="whitespace-pre-wrap text-sm">{state.content}</pre>
-      </div>
-    </div>
-  );
-}
-
-export { FullMessageModal };
+export { };

@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Loader2, Trash2, Download, Eye, EyeOff } from "lucide-react";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { formatDistanceToNow } from "date-fns";
@@ -41,7 +39,7 @@ export default function Saves() {
             model: save.model,
           }, null, 2)
         : `Document: ${save.documentName}\nTask: ${save.taskType}\nPages: ${save.pageStart || "N/A"}-${save.pageEnd || "N/A"}\nDate: ${save.createdAt}\n\n${save.response}`;
-      
+
       const element = document.createElement("a");
       element.setAttribute("href", `data:text/plain;charset=utf-8,${encodeURIComponent(data)}`);
       element.setAttribute("download", `save-${id}.${format === "json" ? "json" : "txt"}`);
@@ -58,7 +56,13 @@ export default function Saves() {
   if (savesQuery.isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="preloader-wrapper small active">
+          <div className="spinner-layer spinner-blue-only">
+            <div className="circle-clipper left"><div className="circle" /></div>
+            <div className="gap-patch"><div className="circle" /></div>
+            <div className="circle-clipper right"><div className="circle" /></div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -68,112 +72,103 @@ export default function Saves() {
   if (saves.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <p className="text-muted-foreground mb-2">No saved responses yet</p>
-          <p className="text-sm text-muted-foreground">Execute tasks in Document Viewer to save results</p>
+        <div className="center-align">
+          <p className="grey-text" style={{ marginBottom: 8 }}>No saved responses yet</p>
+          <p className="grey-text" style={{ fontSize: 13 }}>Execute tasks in Document Viewer to save results</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto p-4 bg-background">
-      <div className="max-w-4xl mx-auto space-y-3">
-        <h2 className="text-2xl font-bold text-foreground mb-6">Saved Responses</h2>
-        
-        {saves.map((save) => (
-          <Card
-            key={save.id}
-            className="p-4 cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setExpandedId(expandedId === save.id ? null : save.id)}
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="font-semibold text-foreground truncate">{save.documentName}</h3>
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                    {save.taskType}
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground space-y-1">
-                  <p>Pages: {save.pageStart || "N/A"} - {save.pageEnd || "N/A"}</p>
-                  <p>{formatDistanceToNow(new Date(save.createdAt), { addSuffix: true })}</p>
-                </div>
-              </div>
+    <div className="overflow-y-auto" style={{ height: "100%", padding: 16, background: "#f5f5f5" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
+        <h4 style={{ fontWeight: 700, marginBottom: 24 }}>Saved Responses</h4>
 
-              {/* Actions */}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setExpandedId(expandedId === save.id ? null : save.id);
-                  }}
+        <div className="collection">
+          {saves.map((save) => {
+            const isExpanded = expandedId === save.id;
+            return (
+              <div key={save.id}>
+                <div
+                  className="collection-item"
+                  onClick={() => setExpandedId(isExpanded ? null : save.id)}
+                  style={{ cursor: "pointer" }}
                 >
-                  {expandedId === save.id ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(save.id, "json");
-                  }}
-                >
-                  <Download className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(save.id);
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 text-destructive" />
-                </Button>
-              </div>
-            </div>
+                  <div className="flex items-start justify-between">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600 }} className="truncate">{save.documentName}</span>
+                        <span className="badge blue lighten-4 blue-text" style={{ float: "none", fontWeight: 500, fontSize: 11 }}>
+                          {save.taskType}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 13, color: "#888" }}>
+                        <span>Pages: {save.pageStart || "N/A"} - {save.pageEnd || "N/A"}</span>
+                        <span style={{ marginLeft: 16 }}>
+                          {formatDistanceToNow(new Date(save.createdAt), { addSuffix: true })}
+                        </span>
+                      </div>
+                    </div>
 
-            {/* Expanded Content */}
-            {expandedId === save.id && (
-              <div className="mt-4 pt-4 border-t border-border">
-                <div className="bg-muted rounded-lg p-4 text-sm text-foreground max-h-96 overflow-y-auto">
-                  <Streamdown>{save.response}</Streamdown>
+                    <div className="flex items-center" style={{ gap: 4, flexShrink: 0 }}>
+                      <button className="btn-flat btn-small" onClick={(e) => {
+                        e.stopPropagation();
+                        setExpandedId(isExpanded ? null : save.id);
+                      }}>
+                        <MaterialIcon icon={isExpanded ? "EyeOff" : "Eye"} />
+                      </button>
+                      <button className="btn-flat btn-small" onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownload(save.id, "json");
+                      }}>
+                        <MaterialIcon icon="Download" />
+                      </button>
+                      <button className="btn-flat btn-small" onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(save.id);
+                      }}>
+                        <MaterialIcon icon="Delete" className="red-text" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex gap-2 mt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigator.clipboard.writeText(save.response);
-                      toast.success("Copied to clipboard");
-                    }}
-                  >
-                    Copy
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownload(save.id, "text");
-                    }}
-                  >
-                    Download as Text
-                  </Button>
-                </div>
+
+                {isExpanded && (
+                  <div style={{ padding: "16px 24px", borderBottom: "1px solid #e0e0e0", background: "#fafafa" }}>
+                    <div style={{
+                      background: "#f0f0f0", borderRadius: 8, padding: 16,
+                      fontSize: 14, maxHeight: 384, overflowY: "auto"
+                    }}>
+                      <Streamdown>{save.response}</Streamdown>
+                    </div>
+                    <div className="flex gap-2" style={{ marginTop: 16 }}>
+                      <button
+                        className="btn-flat btn-small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigator.clipboard.writeText(save.response);
+                          toast.success("Copied to clipboard");
+                        }}
+                      >
+                        <MaterialIcon icon="Copy" className="mr-1" /> Copy
+                      </button>
+                      <button
+                        className="btn-flat btn-small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(save.id, "text");
+                        }}
+                      >
+                        <MaterialIcon icon="Download" className="mr-1" /> Download as Text
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </Card>
-        ))}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

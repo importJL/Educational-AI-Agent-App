@@ -1,116 +1,24 @@
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { cn } from "@/lib/utils";
-import { Loader2, Send, User, Sparkles } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 
-/**
- * Message type matching server-side LLM Message interface
- */
 export type Message = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
 export type AIChatBoxProps = {
-  /**
-   * Messages array to display in the chat.
-   * Should match the format used by invokeLLM on the server.
-   */
   messages: Message[];
-
-  /**
-   * Callback when user sends a message.
-   * Typically you'll call a tRPC mutation here to invoke the LLM.
-   */
   onSendMessage: (content: string) => void;
-
-  /**
-   * Whether the AI is currently generating a response
-   */
   isLoading?: boolean;
-
-  /**
-   * Placeholder text for the input field
-   */
   placeholder?: string;
-
-  /**
-   * Custom className for the container
-   */
   className?: string;
-
-  /**
-   * Max height of the chat box (default: 60vh).
-   * Container grows with content up to this max height.
-   */
   height?: string | number;
-
-  /**
-   * Empty state message to display when no messages
-   */
   emptyStateMessage?: string;
-
-  /**
-   * Suggested prompts to display in empty state
-   * Click to send directly
-   */
   suggestedPrompts?: string[];
 };
 
-/**
- * A ready-to-use AI chat box component that integrates with the LLM system.
- *
- * Features:
- * - Matches server-side Message interface for seamless integration
- * - Markdown rendering with Streamdown
- * - Auto-scrolls to latest message
- * - Loading states
- * - Uses global theme colors from index.css
- *
- * @example
- * ```tsx
- * const ChatPage = () => {
- *   const [messages, setMessages] = useState<Message[]>([
- *     { role: "system", content: "You are a helpful assistant." }
- *   ]);
- *
- *   const chatMutation = trpc.ai.chat.useMutation({
- *     onSuccess: (response) => {
- *       // Assuming your tRPC endpoint returns the AI response as a string
- *       setMessages(prev => [...prev, {
- *         role: "assistant",
- *         content: response
- *       }]);
- *     },
- *     onError: (error) => {
- *       console.error("Chat error:", error);
- *       // Optionally show error message to user
- *     }
- *   });
- *
- *   const handleSend = (content: string) => {
- *     const newMessages = [...messages, { role: "user", content }];
- *     setMessages(newMessages);
- *     chatMutation.mutate({ messages: newMessages });
- *   };
- *
- *   return (
- *     <AIChatBox
- *       messages={messages}
- *       onSendMessage={handleSend}
- *       isLoading={chatMutation.isPending}
- *       suggestedPrompts={[
- *         "Explain quantum computing",
- *         "Write a hello world in Python"
- *       ]}
- *     />
- *   );
- * };
- * ```
- */
 export function AIChatBox({
   messages,
   onSendMessage,
@@ -124,45 +32,14 @@ export function AIChatBox({
   const [input, setInput] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const inputAreaRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Filter out system messages
   const displayMessages = messages.filter(msg => msg.role !== "system");
 
-  // Calculate min-height for last assistant message to push user message to top
-  const [minHeightForLastMessage, setMinHeightForLastMessage] = useState(0);
-
-  useEffect(() => {
-    if (containerRef.current && inputAreaRef.current) {
-      const containerHeight = containerRef.current.offsetHeight;
-      const inputHeight = inputAreaRef.current.offsetHeight;
-      const scrollAreaHeight = containerHeight - inputHeight;
-
-      // Reserve space for:
-      // - padding (p-4 = 32px top+bottom)
-      // - user message: 40px (item height) + 16px (margin-top from space-y-4) = 56px
-      // Note: margin-bottom is not counted because it naturally pushes the assistant message down
-      const userMessageReservedHeight = 56;
-      const calculatedHeight =
-        scrollAreaHeight - 32 - userMessageReservedHeight;
-
-      setMinHeightForLastMessage(Math.max(0, calculatedHeight));
-    }
-  }, []);
-
-  // Scroll to bottom helper function with smooth animation
   const scrollToBottom = () => {
-    const viewport = scrollAreaRef.current?.querySelector(
-      "[data-radix-scroll-area-viewport]"
-    ) as HTMLDivElement;
-
-    if (viewport) {
+    if (scrollAreaRef.current) {
       requestAnimationFrame(() => {
-        viewport.scrollTo({
-          top: viewport.scrollHeight,
-          behavior: "smooth",
-        });
+        scrollAreaRef.current!.scrollTop = scrollAreaRef.current!.scrollHeight;
       });
     }
   };
@@ -171,14 +48,9 @@ export function AIChatBox({
     e.preventDefault();
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
-
     onSendMessage(trimmedInput);
     setInput("");
-
-    // Scroll immediately after sending
     scrollToBottom();
-
-    // Keep focus on input
     textareaRef.current?.focus();
   };
 
@@ -192,145 +64,145 @@ export function AIChatBox({
   return (
     <div
       ref={containerRef}
-      className={cn(
-        "flex flex-col bg-card text-card-foreground rounded-lg border shadow-sm",
-        className
-      )}
-      style={{ maxHeight: height }}
+      className={cn("card", className)}
+      style={{ display: "flex", flexDirection: "column", maxHeight: height, margin: 0 }}
     >
       {/* Messages Area */}
-      <div ref={scrollAreaRef} className="flex-1 overflow-hidden">
+      <div
+        ref={scrollAreaRef}
+        className="overflow-auto"
+        style={{ flex: 1, padding: 16 }}
+      >
         {displayMessages.length === 0 ? (
-          <div className="flex h-full flex-col p-4">
-            <div className="flex flex-1 flex-col items-center justify-center gap-6 text-muted-foreground">
-              <div className="flex flex-col items-center gap-3">
-                <Sparkles className="size-12 opacity-20" />
-                <p className="text-sm">{emptyStateMessage}</p>
+          <div className="flex flex-col items-center justify-center" style={{ height: "100%", textAlign: "center", color: "#888" }}>
+            <MaterialIcon icon="Sparkles" style={{ fontSize: 48, opacity: 0.3, marginBottom: 12 }} />
+            <p style={{ fontSize: 14, marginBottom: 16 }}>{emptyStateMessage}</p>
+            {suggestedPrompts && suggestedPrompts.length > 0 && (
+              <div className="flex flex-wrap justify-center gap-2" style={{ maxWidth: 400 }}>
+                {suggestedPrompts.map((prompt, index) => (
+                  <button
+                    key={index}
+                    onClick={() => onSendMessage(prompt)}
+                    disabled={isLoading}
+                    className="btn-flat"
+                    style={{ border: "1px solid #e0e0e0", fontSize: 13, padding: "6px 12px", borderRadius: 8 }}
+                  >
+                    {prompt}
+                  </button>
+                ))}
               </div>
-
-              {suggestedPrompts && suggestedPrompts.length > 0 && (
-                <div className="flex max-w-2xl flex-wrap justify-center gap-2">
-                  {suggestedPrompts.map((prompt, index) => (
-                    <button
-                      key={index}
-                      onClick={() => onSendMessage(prompt)}
-                      disabled={isLoading}
-                      className="rounded-lg border border-border bg-card px-4 py-2 text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         ) : (
-          <ScrollArea className="h-full">
-            <div className="flex flex-col space-y-4 p-4">
-              {displayMessages.map((message, index) => {
-                // Apply min-height to last message only if NOT loading (when loading, the loading indicator gets it)
-                const isLastMessage = index === displayMessages.length - 1;
-                const shouldApplyMinHeight =
-                  isLastMessage && !isLoading && minHeightForLastMessage > 0;
+          <div className="flex flex-col" style={{ gap: 16 }}>
+            {displayMessages.map((message, index) => (
+              <div
+                key={index}
+                className="flex gap-3"
+                style={{
+                  justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+                  alignItems: "flex-start"
+                }}
+              >
+                {message.role === "assistant" && (
+                  <div style={{
+                    width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                    background: "rgba(21,101,192,0.1)", display: "flex",
+                    alignItems: "center", justifyContent: "center"
+                  }}>
+                    <MaterialIcon icon="Sparkles" style={{ fontSize: 16, color: "#1565c0" }} />
+                  </div>
+                )}
 
-                return (
-                  <div
-                    key={index}
-                    className={cn(
-                      "flex gap-3",
-                      message.role === "user"
-                        ? "justify-end items-start"
-                        : "justify-start items-start"
-                    )}
-                    style={
-                      shouldApplyMinHeight
-                        ? { minHeight: `${minHeightForLastMessage}px` }
-                        : undefined
-                    }
-                  >
-                    {message.role === "assistant" && (
-                      <div className="size-8 shrink-0 mt-1 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Sparkles className="size-4 text-primary" />
-                      </div>
-                    )}
-
-                    <div
-                      className={cn(
-                        "rounded-lg px-4 py-2.5 overflow-y-auto",
-                        message.role === "user"
-                          ? "max-w-[80%] bg-primary text-primary-foreground"
-                          : "flex-1 bg-muted text-foreground"
-                      )}
-                    >
-                      {message.role === "assistant" ? (
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <Streamdown>{message.content}</Streamdown>
-                        </div>
-                      ) : (
-                        <p className="whitespace-pre-wrap text-sm">
-                          {message.content}
-                        </p>
-                      )}
+                <div style={{
+                  maxWidth: message.role === "user" ? "80%" : "100%",
+                  padding: "10px 16px",
+                  borderRadius: 12,
+                  background: message.role === "user" ? "#1565c0" : "#f0f0f0",
+                  color: message.role === "user" ? "#fff" : "inherit",
+                  overflowY: "auto",
+                }}>
+                  {message.role === "assistant" ? (
+                    <div className="prose prose-sm" style={{ maxWidth: "none" }}>
+                      <Streamdown>{message.content}</Streamdown>
                     </div>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: 14, whiteSpace: "pre-wrap" }}>{message.content}</p>
+                  )}
+                </div>
 
-                    {message.role === "user" && (
-                      <div className="size-8 shrink-0 mt-1 rounded-full bg-secondary flex items-center justify-center">
-                        <User className="size-4 text-secondary-foreground" />
-                      </div>
-                    )}
+                {message.role === "user" && (
+                  <div style={{
+                    width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                    background: "#e0e0e0", display: "flex",
+                    alignItems: "center", justifyContent: "center"
+                  }}>
+                    <MaterialIcon icon="User" style={{ fontSize: 16 }} />
                   </div>
-                );
-              })}
+                )}
+              </div>
+            ))}
 
-              {isLoading && (
-                <div
-                  className="flex items-start gap-3"
-                  style={
-                    minHeightForLastMessage > 0
-                      ? { minHeight: `${minHeightForLastMessage}px` }
-                      : undefined
-                  }
-                >
-                  <div className="size-8 shrink-0 mt-1 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Sparkles className="size-4 text-primary" />
-                  </div>
-                  <div className="flex-1 rounded-lg bg-muted px-4 py-2.5">
-                    <Loader2 className="size-4 animate-spin text-muted-foreground" />
+            {isLoading && (
+              <div className="flex items-start gap-3">
+                <div style={{
+                  width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                  background: "rgba(21,101,192,0.1)", display: "flex",
+                  alignItems: "center", justifyContent: "center"
+                }}>
+                  <MaterialIcon icon="Sparkles" style={{ fontSize: 16, color: "#1565c0" }} />
+                </div>
+                <div style={{ background: "#f0f0f0", borderRadius: 12, padding: "10px 16px" }}>
+                  <div className="preloader-wrapper small active" style={{ width: 20, height: 20 }}>
+                    <div className="spinner-layer spinner-blue-only">
+                      <div className="circle-clipper left"><div className="circle" /></div>
+                      <div className="gap-patch"><div className="circle" /></div>
+                      <div className="circle-clipper right"><div className="circle" /></div>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          </ScrollArea>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
       {/* Input Area */}
       <form
-        ref={inputAreaRef}
         onSubmit={handleSubmit}
-        className="flex gap-2 p-4 border-t bg-background/50 items-end"
+        className="flex gap-2 items-end"
+        style={{ padding: 16, borderTop: "1px solid #e0e0e0", background: "#fafafa" }}
       >
-        <Textarea
-          ref={textareaRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          className="flex-1 max-h-32 resize-none min-h-9"
-          rows={1}
-        />
-        <Button
+        <div className="input-field" style={{ flex: 1, margin: 0 }}>
+          <textarea
+            ref={textareaRef}
+            className="materialize-textarea"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            rows={1}
+            style={{ minHeight: 36, maxHeight: 128, resize: "none", margin: 0 }}
+          />
+        </div>
+        <button
           type="submit"
-          size="icon"
+          className="btn waves-effect waves-light"
           disabled={!input.trim() || isLoading}
-          className="shrink-0 h-[38px] w-[38px]"
+          style={{ height: 38, width: 38, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
         >
           {isLoading ? (
-            <Loader2 className="size-4 animate-spin" />
+            <div className="preloader-wrapper small active" style={{ width: 16, height: 16 }}>
+              <div className="spinner-layer spinner-white-only">
+                <div className="circle-clipper left"><div className="circle" /></div>
+                <div className="gap-patch"><div className="circle" /></div>
+                <div className="circle-clipper right"><div className="circle" /></div>
+              </div>
+            </div>
           ) : (
-            <Send className="size-4" />
+            <MaterialIcon icon="Send" style={{ fontSize: 16 }} />
           )}
-        </Button>
+        </button>
       </form>
     </div>
   );

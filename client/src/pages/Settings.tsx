@@ -1,16 +1,5 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useTheme } from "@/contexts/ThemeContext";
 
@@ -41,7 +30,6 @@ export default function Settings() {
         pdfZoomLevel,
         autoSaveResponses: autoSaveResponses ? 1 : 0,
       });
-      // apply theme immediately if context supports it
       themeCtx.setTheme?.(theme as "light" | "dark");
       toast.success("Settings saved");
     } catch (error) {
@@ -52,123 +40,111 @@ export default function Settings() {
   if (prefsQuery.isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="preloader-wrapper small active">
+          <div className="spinner-layer spinner-blue-only">
+            <div className="circle-clipper left"><div className="circle" /></div>
+            <div className="gap-patch"><div className="circle" /></div>
+            <div className="circle-clipper right"><div className="circle" /></div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto p-4 bg-background">
-      <div className="max-w-2xl mx-auto">
-        <h2 className="text-2xl font-bold text-foreground mb-6">Settings</h2>
+    <div className="overflow-y-auto" style={{ height: "100%", padding: 16, background: "#f5f5f5" }}>
+      <div style={{ maxWidth: 540, margin: "0 auto" }}>
+        <h4 style={{ fontWeight: 700, marginBottom: 24 }}>Settings</h4>
 
-        <div className="space-y-6">
-          {/* Display Settings */}
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">
-              Display
-            </h3>
+        {/* Display Settings */}
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="card-content">
+            <span className="card-title">Display</span>
 
-            <div className="space-y-4">
-              <div>
-                <Label
-                  htmlFor="theme"
-                  className="text-sm font-medium text-foreground mb-2 block"
+            <div className="flex items-center" style={{ marginBottom: 20 }}>
+              <label style={{ width: 160, fontWeight: 500 }}>Theme</label>
+              <div className="input-field" style={{ flex: 1, margin: 0 }}>
+                <select
+                  className="browser-default"
+                  value={theme}
+                  onChange={e => setTheme(e.target.value)}
+                  style={{ display: "block" }}
                 >
-                  Theme
-                </Label>
-                <Select value={theme} onValueChange={setTheme}>
-                  <SelectTrigger id="theme">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="light">Light</SelectItem>
-                    <SelectItem value="dark">Dark</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
               </div>
+            </div>
 
-              <div>
-                <Label
-                  htmlFor="fontSize"
-                  className="text-sm font-medium text-foreground mb-2 block"
+            <div className="flex items-center" style={{ marginBottom: 20 }}>
+              <label style={{ width: 160, fontWeight: 500 }}>Font Size</label>
+              <div className="input-field" style={{ flex: 1, margin: 0 }}>
+                <select
+                  className="browser-default"
+                  value={fontSize}
+                  onChange={e => setFontSize(e.target.value)}
+                  style={{ display: "block" }}
                 >
-                  Font Size
-                </Label>
-                <Select value={fontSize} onValueChange={setFontSize}>
-                  <SelectTrigger id="fontSize">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="small">Small</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="large">Large</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
               </div>
+            </div>
 
-              <div>
-                <Label
-                  htmlFor="pdfZoom"
-                  className="text-sm font-medium text-foreground mb-2 block"
-                >
-                  Default PDF Zoom Level: {pdfZoomLevel}%
-                </Label>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontWeight: 500, display: "block", marginBottom: 8 }}>
+                Default PDF Zoom Level: {pdfZoomLevel}%
+              </label>
+              <div className="range-field">
                 <input
-                  id="pdfZoom"
                   type="range"
                   min="50"
                   max="200"
                   step="10"
                   value={pdfZoomLevel}
                   onChange={e => setPdfZoomLevel(parseInt(e.target.value))}
-                  className="w-full"
                 />
               </div>
             </div>
-          </Card>
-
-          {/* General Settings */}
-          <Card className="p-6">
-            <h3 className="text-lg font-semibold text-foreground mb-4">
-              General
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <input
-                  id="autoSave"
-                  type="checkbox"
-                  checked={autoSaveResponses}
-                  onChange={e => setAutoSaveResponses(e.target.checked)}
-                  className="w-4 h-4 rounded border-border"
-                />
-                <Label
-                  htmlFor="autoSave"
-                  className="text-sm font-medium text-foreground cursor-pointer"
-                >
-                  Automatically save task responses
-                </Label>
-              </div>
-            </div>
-          </Card>
-
-          {/* Save Button */}
-          <div className="flex gap-3">
-            <Button
-              onClick={handleSave}
-              disabled={updatePrefsMutation.isPending}
-            >
-              {updatePrefsMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Save Settings"
-              )}
-            </Button>
           </div>
         </div>
+
+        {/* General Settings */}
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="card-content">
+            <span className="card-title">General</span>
+            <label>
+              <input
+                type="checkbox"
+                className="filled-in"
+                checked={autoSaveResponses}
+                onChange={e => setAutoSaveResponses(e.target.checked)}
+              />
+              <span>Automatically save task responses</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Save Button */}
+        <button
+          className="btn waves-effect waves-light"
+          onClick={handleSave}
+          disabled={updatePrefsMutation.isPending}
+        >
+          {updatePrefsMutation.isPending ? (
+            <>
+              <div className="preloader-wrapper small active" style={{ width: 20, height: 20, display: "inline-block", marginRight: 8, verticalAlign: "middle" }}>
+                <div className="spinner-layer spinner-white-only">
+                  <div className="circle-clipper left"><div className="circle" /></div>
+                  <div className="gap-patch"><div className="circle" /></div>
+                  <div className="circle-clipper right"><div className="circle" /></div>
+                </div>
+              </div>
+              Saving...
+            </>
+          ) : "Save Settings"}
+        </button>
       </div>
     </div>
   );

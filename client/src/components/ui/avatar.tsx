@@ -1,51 +1,20 @@
 import * as React from "react";
-import * as AvatarPrimitive from "@radix-ui/react-avatar";
-
 import { cn } from "@/lib/utils";
 
-function Avatar({
-  className,
-  ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Root>) {
-  return (
-    <AvatarPrimitive.Root
-      data-slot="avatar"
-      className={cn(
-        "relative flex size-8 shrink-0 overflow-hidden rounded-full",
-        className
-      )}
-      {...props}
-    />
-  );
+function Avatar({ className, ...props }: React.ComponentProps<"div">) {
+  return <div className={cn("avatar", className)} style={{ borderRadius: "50%", overflow: "hidden", width: 40, height: 40 }} {...props} />;
 }
 
-function AvatarImage({
-  className,
-  ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Image>) {
-  return (
-    <AvatarPrimitive.Image
-      data-slot="avatar-image"
-      className={cn("aspect-square size-full", className)}
-      {...props}
-    />
-  );
+function AvatarImage({ className, ...props }: React.ComponentProps<"img">) {
+  return <img className={cn("", className)} style={{ width: "100%", height: "100%", objectFit: "cover" }} {...props} />;
 }
 
-function AvatarFallback({
-  className,
-  ...props
-}: React.ComponentProps<typeof AvatarPrimitive.Fallback>) {
-  return (
-    <AvatarPrimitive.Fallback
-      data-slot="avatar-fallback"
-      className={cn(
-        "bg-muted flex size-full items-center justify-center rounded-full",
-        className
-      )}
-      {...props}
-    />
-  );
+function AvatarFallback({ className, children, ...props }: React.ComponentProps<"div">) {
+  return <div className={cn("", className)} style={{
+    width: "100%", height: "100%", display: "flex",
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "#1565c0", color: "#fff", fontWeight: 500
+  }} {...props}>{children}</div>;
 }
 
 export { Avatar, AvatarImage, AvatarFallback };

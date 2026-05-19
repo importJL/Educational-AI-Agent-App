@@ -1,53 +1,44 @@
 import * as React from "react";
-import { GripVerticalIcon } from "lucide-react";
-import * as ResizablePrimitive from "react-resizable-panels";
-
 import { cn } from "@/lib/utils";
 
-function ResizablePanelGroup({
-  className,
-  ...props
-}: React.ComponentProps<typeof ResizablePrimitive.PanelGroup>) {
+function ResizablePanelGroup({ className, direction = "horizontal", children, ...props }: React.ComponentProps<"div"> & { direction?: "horizontal" | "vertical" }) {
   return (
-    <ResizablePrimitive.PanelGroup
-      data-slot="resizable-panel-group"
-      className={cn(
-        "flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
-        className
-      )}
+    <div
+      className={cn("resizable-panel-group", className)}
+      data-direction={direction}
+      style={{ flexDirection: direction === "horizontal" ? "row" : "column" }}
       {...props}
-    />
+    >
+      {children}
+    </div>
   );
 }
 
-function ResizablePanel({
-  ...props
-}: React.ComponentProps<typeof ResizablePrimitive.Panel>) {
-  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />;
-}
-
-function ResizableHandle({
-  withHandle,
-  className,
-  ...props
-}: React.ComponentProps<typeof ResizablePrimitive.PanelResizeHandle> & {
-  withHandle?: boolean;
-}) {
+function ResizablePanel({ className, defaultSize, minSize, maxSize, children, ...props }: React.ComponentProps<"div"> & { defaultSize?: number; minSize?: number; maxSize?: number }) {
+  const [size, setSize] = React.useState(defaultSize || 50);
   return (
-    <ResizablePrimitive.PanelResizeHandle
-      data-slot="resizable-handle"
-      className={cn(
-        "bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:translate-x-0 data-[panel-group-direction=vertical]:after:-translate-y-1/2 [&[data-panel-group-direction=vertical]>div]:rotate-90",
-        className
-      )}
+    <div
+      className={cn("", className)}
+      style={{ flex: `${size} 1 0%`, overflow: "auto", minWidth: minSize || 0 }}
       {...props}
     >
-      {withHandle && (
-        <div className="bg-border z-10 flex h-4 w-3 items-center justify-center rounded-xs border">
-          <GripVerticalIcon className="size-2.5" />
-        </div>
-      )}
-    </ResizablePrimitive.PanelResizeHandle>
+      {children}
+    </div>
+  );
+}
+
+function ResizableHandle({ className, withHandle, ...props }: React.ComponentProps<"div"> & { withHandle?: boolean }) {
+  return (
+    <div
+      className={cn("resizable-handle", className)}
+      style={{
+        width: 4, cursor: "col-resize", background: "#e0e0e0",
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0
+      }}
+      {...props}
+    >
+      {withHandle && <div style={{ width: 16, height: 24, background: "#ccc", borderRadius: 4 }} />}
+    </div>
   );
 }
 

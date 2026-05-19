@@ -1,9 +1,5 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Loader2, LogIn } from "lucide-react";
+import { MaterialIcon } from "@/components/MaterialIcon";
 import { trpc } from "@/lib/trpc";
 
 export default function Login() {
@@ -22,68 +18,73 @@ export default function Login() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-background">
-      <Card className="w-full max-w-sm p-8">
-        <div className="flex flex-col items-center gap-2 mb-8">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
-            <span className="text-white font-bold text-lg">AI</span>
+    <div className="flex items-center justify-center min-h-screen" style={{ background: "#f5f5f5" }}>
+      <div className="card" style={{ width: "100%", maxWidth: 400, margin: 16 }}>
+        <div className="card-content">
+          <div className="flex flex-col items-center gap-2" style={{ marginBottom: 32 }}>
+            <div className="flex items-center justify-center" style={{
+              width: 48, height: 48, borderRadius: 12,
+              background: "linear-gradient(135deg, #1565c0, #1976d2)",
+              fontSize: 20, fontWeight: 700, color: "#fff"
+            }}>
+              AI
+            </div>
+            <h5 style={{ margin: "8px 0 0" }}>Educational AI Agent</h5>
+            <p className="grey-text" style={{ margin: 0 }}>Sign in to your account</p>
           </div>
-          <h1 className="text-xl font-semibold text-foreground">
-            Educational AI Agent
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Sign in to your account
+
+          <form onSubmit={handleSubmit}>
+            <div className="input-field">
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                required
+              />
+              <label htmlFor="username">Username</label>
+            </div>
+            <div className="input-field">
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+              />
+              <label htmlFor="password">Password</label>
+            </div>
+
+            {loginMutation.error && (
+              <p className="red-text" style={{ fontSize: 13 }}>{loginMutation.error.message}</p>
+            )}
+
+            <button
+              type="submit"
+              className="btn waves-effect waves-light w-full"
+              style={{ width: "100%", marginTop: 16 }}
+              disabled={loginMutation.isPending}
+            >
+              {loginMutation.isPending ? (
+                <div className="preloader-wrapper small active" style={{ width: 20, height: 20, display: "inline-block", marginRight: 8 }}>
+                  <div className="spinner-layer spinner-white-only">
+                    <div className="circle-clipper left"><div className="circle" /></div>
+                    <div className="gap-patch"><div className="circle" /></div>
+                    <div className="circle-clipper right"><div className="circle" /></div>
+                  </div>
+                </div>
+              ) : (
+                <MaterialIcon icon="LogIn" className="mr-1" />
+              )}
+              Sign In
+            </button>
+          </form>
+
+          <p className="grey-text text-center" style={{ fontSize: 11, marginTop: 24 }}>
+            Development mode &middot; Default credentials: devuser / devpassword
           </p>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
-            <Input
-              id="username"
-              type="text"
-              placeholder="devuser"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="devpassword"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-            />
-          </div>
-
-          {loginMutation.error && (
-            <p className="text-sm text-destructive">
-              {loginMutation.error.message}
-            </p>
-          )}
-
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={loginMutation.isPending}
-          >
-            {loginMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <LogIn className="w-4 h-4 mr-2" />
-            )}
-            Sign In
-          </Button>
-        </form>
-
-        <p className="mt-6 text-xs text-center text-muted-foreground">
-          Development mode &middot; Default credentials: devuser / devpassword
-        </p>
-      </Card>
+      </div>
     </div>
   );
 }

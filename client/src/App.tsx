@@ -4,13 +4,12 @@ import { useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
-import { Sun, Moon } from "lucide-react";
+import { MaterialIcon } from "./components/MaterialIcon";
 import { trpc } from "@/lib/trpc";
 import Login from "./pages/Login";
 import DocumentViewer from "./pages/DocumentViewer";
 import Saves from "./pages/Saves";
 import Settings from "./pages/Settings";
-import { Loader2 } from "lucide-react";
 
 type TabType = "Document Viewer" | "Saves" | "Settings";
 
@@ -21,12 +20,16 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
+      <div className="flex items-center justify-center min-h-screen" style={{ background: "#f5f5f5" }}>
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">
-            Loading application...
-          </p>
+          <div className="preloader-wrapper small active">
+            <div className="spinner-layer spinner-blue-only">
+              <div className="circle-clipper left"><div className="circle" /></div>
+              <div className="gap-patch"><div className="circle" /></div>
+              <div className="circle-clipper right"><div className="circle" /></div>
+            </div>
+          </div>
+          <p className="grey-text">Loading application...</p>
         </div>
       </div>
     );
@@ -37,40 +40,35 @@ function AppContent() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-background">
+    <div className="flex flex-col" style={{ height: "100vh", background: "#f5f5f5" }}>
       {/* Navigation Bar */}
-      <nav className="border-b border-border bg-card shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+      <nav>
+        <div className="nav-wrapper" style={{ padding: "0 16px" }}>
+          <div className="flex items-center justify-between" style={{ height: 64 }}>
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
-                <span className="text-white font-bold text-sm">AI</span>
-              </div>
-              <h1 className="text-lg font-semibold text-foreground">
+              <span className="brand-logo" style={{ position: "static" }}>
                 Educational AI Agent
-              </h1>
+              </span>
             </div>
-            <div className="flex gap-1">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => toggleTheme?.()}
-                className="p-2 rounded-md hover:bg-accent"
-                title="Toggle theme"
+                className="btn-flat"
+                style={{ color: "#fff", padding: "0 12px" }}
               >
-                {theme === "dark" ? (
-                  <Sun className="w-5 h-5" />
-                ) : (
-                  <Moon className="w-5 h-5" />
-                )}
+                <MaterialIcon icon={theme === "dark" ? "Sun" : "Moon"} />
               </button>
               {(["Document Viewer", "Saves", "Settings"] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`px-4 py-2 text-sm font-medium transition-colors rounded-md ${
-                    activeTab === tab
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                  }`}
+                  className="btn-flat"
+                  style={{
+                    color: activeTab === tab ? "#fff" : "rgba(255,255,255,0.7)",
+                    background: activeTab === tab ? "rgba(255,255,255,0.15)" : "transparent",
+                    fontWeight: activeTab === tab ? 600 : 400,
+                    padding: "0 16px", height: 36, borderRadius: 4, fontSize: 14
+                  }}
                 >
                   {tab}
                 </button>
@@ -80,13 +78,9 @@ function AppContent() {
         </div>
       </nav>
 
-      {/* Main Content - tabs stay mounted, hidden with CSS to preserve state */}
+      {/* Main Content */}
       <div className="flex-1 overflow-hidden">
-        <div
-          className={
-            activeTab === "Document Viewer" ? "h-full" : "hidden h-full"
-          }
-        >
+        <div className={activeTab === "Document Viewer" ? "h-full" : "hidden h-full"}>
           <DocumentViewer />
         </div>
         <div className={activeTab === "Saves" ? "h-full" : "hidden h-full"}>
@@ -105,13 +99,19 @@ function App() {
 
   if (prefsQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="flex items-center justify-center min-h-screen" style={{ background: "#f5f5f5" }}>
+        <div className="preloader-wrapper small active">
+          <div className="spinner-layer spinner-blue-only">
+            <div className="circle-clipper left"><div className="circle" /></div>
+            <div className="gap-patch"><div className="circle" /></div>
+            <div className="circle-clipper right"><div className="circle" /></div>
+          </div>
+        </div>
       </div>
     );
   }
 
-  const defaultTheme = prefsQuery.data?.theme || "light";
+  const defaultTheme = (prefsQuery.data?.theme || "light") as "light" | "dark";
 
   return (
     <ErrorBoundary>

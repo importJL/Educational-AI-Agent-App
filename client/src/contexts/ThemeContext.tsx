@@ -32,10 +32,13 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = document.documentElement;
+    const body = document.body;
     if (theme === "dark") {
       root.classList.add("dark");
+      body.style.backgroundColor = "#121212";
     } else {
       root.classList.remove("dark");
+      body.style.backgroundColor = "#f5f5f5";
     }
 
     if (switchable) {
