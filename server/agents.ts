@@ -11,6 +11,8 @@
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const API_TIMEOUT_MS = 60_000;
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000; // Base delay for exponential backoff
 
 export const MODELS = {
   OCR: "baidu/qianfan-ocr-fast:free",
@@ -20,12 +22,31 @@ export const MODELS = {
 };
 
 export const MODEL_FALLBACKS: Record<string, string> = {
-  "google/gemma-4-31b-it:free": "minimax/minimax-m2.5:free",
+  "google/gemma-4-31b-it:free": "deepseek/deepseek-v4-flash:free",
   "openrouter/owl-alpha": "minimax/minimax-m2.5:free",
 };
 
-function getFallbackModel(model: string, status: number, errorText: string, retryCount: number): string | null {
-  if (retryCount > 0) return null;
+// Track which model variant we're currently using to prevent fallback loops
+interface RequestContext {
+  originalModel: string;
+  currentModel: string;
+  retryCount: number;
+}
+
+function getFallbackModel(
+  model: string,
+  status: number,
+  errorText: string,
+  originalModel: string,
+  retryCount: number
+): string | null {
+  // For rate limits (429), allow retries on the same model up to MAX_RETRIES
+  if (status === 429 && retryCount < MAX_RETRIES) {
+    return model; // Retry the same model with backoff
+  }
+
+  // Only fallback once per original model
+  if (originalModel !== model) return null;
 
   const fallbackModel = MODEL_FALLBACKS[model];
   if (!fallbackModel) return null;
@@ -47,6 +68,22 @@ function getFallbackModel(model: string, status: number, errorText: string, retr
   }
 
   return null;
+}
+
+/**
+ * Calculate exponential backoff delay
+ * Prevents overwhelming the API with retries
+ */
+function getBackoffDelay(retryCount: number): number {
+  return RETRY_DELAY_MS * Math.pow(2, retryCount);
+
+}
+
+/**
+ * Sleep utility for delays between retries
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getErrorReason(status: number, errorText: string): string {
@@ -81,12 +118,13 @@ interface Message {
 
 /**
  * Call OpenRouter API with specified model
+ * Supports retries for rate limits and fallback models for other errors
  */
 async function callOpenRouter(
   model: string,
   messages: Message[],
   maxTokens: number = 4096,
-  retryCount: number = 0
+  context: RequestContext = { originalModel: model, currentModel: model, retryCount: 0 }
 ): Promise<AgentResponse> {
   if (!OPENROUTER_API_KEY) {
     throw new Error("OPENROUTER_API_KEY environment variable not set");
@@ -105,7 +143,7 @@ async function callOpenRouter(
         "X-Title": "Educational AI Agent",
       },
       body: JSON.stringify({
-        model,
+        model: context.currentModel,
         messages,
         max_tokens: maxTokens,
         temperature: 0.7,
@@ -117,19 +155,40 @@ async function callOpenRouter(
 
     if (!response.ok) {
       const errorText = await response.text();
+      const errorReason = getErrorReason(response.status, errorText);
 
-      const fallbackModel = getFallbackModel(model, response.status, errorText, retryCount);
-      if (fallbackModel) {
-        const errorReason = getErrorReason(response.status, errorText);
+      // Handle rate limiting with exponential backoff retry
+      if (response.status === 429 && context.retryCount < MAX_RETRIES) {
+        const backoffMs = getBackoffDelay(context.retryCount);
         console.warn(
-          `[Agent] ${errorReason} on ${model}, retrying with fallback ${fallbackModel}`
+          `[Agent] ${errorReason} on ${context.currentModel} (attempt ${context.retryCount + 1}/${MAX_RETRIES}), retrying in ${backoffMs}ms...`
         );
-        return callOpenRouter(
-          fallbackModel,
-          messages,
-          maxTokens,
-          retryCount + 1
+        await sleep(backoffMs);
+        return callOpenRouter(context.currentModel, messages, maxTokens, {
+          originalModel: context.originalModel,
+          currentModel: context.currentModel,
+          retryCount: context.retryCount + 1,
+        });
+      }
+
+      // Try fallback model for non-rate-limit errors or after max retries exhausted
+      const fallbackModel = getFallbackModel(
+        model,
+        response.status,
+        errorText,
+        context.originalModel,
+        context.retryCount
+      );
+
+      if (fallbackModel && fallbackModel !== context.currentModel) {
+        console.warn(
+          `[Agent] ${errorReason} on ${context.currentModel}, switching to fallback model ${fallbackModel}`
         );
+        return callOpenRouter(fallbackModel, messages, maxTokens, {
+          originalModel: context.originalModel,
+          currentModel: fallbackModel,
+          retryCount: 0, // Reset retry count for new model
+        });
       }
 
       throw new Error(
@@ -139,19 +198,25 @@ async function callOpenRouter(
 
     const data = await response.json();
 
+    if (context.retryCount > 0) {
+      console.info(
+        `[Agent] Request succeeded on ${context.currentModel} after ${context.retryCount} retries`
+      );
+    }
+
     return {
       content: data.choices[0]?.message?.content || "",
-      model,
+      model: context.currentModel,
       usage: data.usage,
     };
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error(
-        `OpenRouter API timeout after ${API_TIMEOUT_MS}ms for model ${model}`
+        `OpenRouter API timeout after ${API_TIMEOUT_MS}ms for model ${context.currentModel}`
       );
     }
-    console.error(`[Agent] Error calling ${model}:`, error);
+    console.error(`[Agent] Error calling ${context.currentModel}:`, error);
     throw error;
   }
 }

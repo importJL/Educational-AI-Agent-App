@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min?url";
+import { AgentFlowViewer } from "@/components/AgentFlowViewer";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -76,7 +77,6 @@ export default function DocumentViewer() {
   const [streamController, setStreamController] = useState<AbortController | null>(null);
   const [fullModal, setFullModal] = useState<{ open: boolean; title?: string; content?: string }>({ open: false });
   const [agentFlowCollapsed, setAgentFlowCollapsed] = useState(false);
-  const [perAgentCollapsed, setPerAgentCollapsed] = useState<Set<number>>(new Set());
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [documentId, setDocumentId] = useState<number | null>(null);
@@ -820,74 +820,38 @@ export default function DocumentViewer() {
                   {/* Left: Agent Flow side panel */}
                   {agentLogs && agentLogs.length > 0 && !agentFlowCollapsed ? (
                     <div className="w-1/3 max-w-[420px] min-w-[220px] flex flex-col">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium text-foreground">Agent Flow</h4>
-                        <div className="flex gap-2">
-                          <button
-                            className="text-[12px] text-muted-foreground hover:underline"
-                            onClick={() => setPerAgentCollapsed(new Set(agentLogs.map((_, i) => i)))}
-                          >
-                            Collapse
-                          </button>
-                          <button
-                            className="text-[12px] text-muted-foreground hover:underline"
-                            onClick={() => setPerAgentCollapsed(new Set())}
-                          >
-                            Expand
-                          </button>
-                          <button
-                            className="text-[12px] text-muted-foreground hover:underline"
-                            onClick={() => setAgentFlowCollapsed(true)}
-                          >
-                            Hide
-                          </button>
-                        </div>
+                      <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
+                        <h4 className="text-sm font-semibold text-foreground">Agent Flow</h4>
+                        <button
+                          className="text-[12px] text-muted-foreground hover:underline transition-colors"
+                          onClick={() => setAgentFlowCollapsed(true)}
+                          title="Hide Agent Flow panel"
+                        >
+                          Hide
+                        </button>
                       </div>
-
-                      <div className="bg-surface rounded-md p-3 text-xs text-foreground overflow-auto flex-1">
-                        {agentLogs.map((log, idx) => {
-                          const collapsed = perAgentCollapsed.has(idx);
-                          return (
-                            <div key={idx} className="mb-3">
-                              <div className="flex items-center justify-between">
-                                <div className="font-semibold">{log.agent} (model: {log.model})</div>
-                                <div className="flex gap-2">
-                                  <button
-                                    className="text-[11px] text-muted-foreground hover:underline"
-                                    onClick={() => setFullModal({ open: true, title: `${log.agent} full messages`, content: log.messages?.map?.((m: any) => `${m.role}: ${m.content}`).join('\n\n---\n\n') })}
-                                  >
-                                    View full
-                                  </button>
-                                  <button
-                                    className="text-[11px] text-muted-foreground hover:underline"
-                                    onClick={() => setPerAgentCollapsed(prev => {
-                                      const next = new Set(prev);
-                                      if (next.has(idx)) next.delete(idx); else next.add(idx);
-                                      return next;
-                                    })}
-                                  >
-                                    {collapsed ? 'Expand' : 'Collapse'}
-                                  </button>
-                                </div>
-                              </div>
-                              {!collapsed && (
-                                <div className="text-muted-foreground text-[11px] mt-1">
-                                  <pre className="whitespace-pre-wrap text-xs bg-transparent p-0">{log.messages?.map?.((m: any) => `${m.role}: ${m.content}`).join('\n---\n')}</pre>
-                                  {log.responsePreview && (
-                                    <div className="mt-1 text-[11px] text-muted-foreground">Response preview: {log.responsePreview}</div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                      <div className="overflow-auto flex-1 pr-2">
+                        <AgentFlowViewer
+                          logs={agentLogs}
+                          onViewFullMessages={(log) =>
+                            setFullModal({
+                              open: true,
+                              title: `${log.agent} - Full Messages`,
+                              content: log.messages
+                                ?.map((m: any) => `[${m.role.toUpperCase()}]\n${m.content}`)
+                                .join("\n\n---\n\n"),
+                            })
+                          }
+                        />
                       </div>
                     </div>
                   ) : (
-                    <div className="w-12 flex items-start">
+                    <div className="flex flex-col items-start gap-2 pt-1">
+                      <div className="text-xs font-medium text-muted-foreground px-2">Agent Flow</div>
                       <button
-                        className="text-[12px] text-muted-foreground hover:underline"
+                        className="text-[12px] text-muted-foreground hover:underline transition-colors px-2"
                         onClick={() => setAgentFlowCollapsed(false)}
+                        title="Show Agent Flow panel"
                       >
                         Show
                       </button>
