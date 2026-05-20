@@ -6,6 +6,7 @@ import { Streamdown } from "streamdown";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/legacy/build/pdf.worker.min?url";
 import { AgentFlowViewer } from "@/components/AgentFlowViewer";
+import { useTheme } from "@/contexts/ThemeContext";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -24,6 +25,7 @@ type TaskType =
   | "Custom Instructions";
 
 export default function DocumentViewer() {
+  const { theme } = useTheme();
   const [file, setFile] = useState<File | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
@@ -467,19 +469,22 @@ export default function DocumentViewer() {
                         <MaterialIcon icon="LayoutGrid" />
                       </button>
                     </div>
-                    <button className="btn-flat btn-small" onClick={() => {
-                      renderTasksRef.current.forEach(task => task.cancel());
-                      renderTasksRef.current.clear();
-                      setFile(null);
-                      setPdfDoc(null);
-                      setTaskResult("");
-                      setDocumentId(null);
-                      setCurrentPage(1);
-                      setTotalPages(0);
-                      setRenderedPages(new Set());
-                    }}>
-                      <MaterialIcon icon="X" className="mr-1" /> Clear
-                    </button>
+<button className={`btn-flat btn-small clear-btn-beige ${theme === "dark" ? "white-text" : ""}`} onClick={() => {
+  renderTasksRef.current.forEach(task => task.cancel());
+  renderTasksRef.current.clear();
+  setFile(null);
+  setPdfDoc(null);
+  setTaskResult("");
+  setDocumentId(null);
+  setCurrentPage(1);
+  setTotalPages(0);
+  setRenderedPages(new Set());
+}} style={{ 
+  display: 'flex',
+  alignItems: 'center'
+}}>
+  <MaterialIcon icon="X" className="mr-1" /> Clear
+</button>
                   </div>
 
                   <div

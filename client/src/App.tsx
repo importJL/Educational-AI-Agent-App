@@ -41,42 +41,42 @@ function AppContent() {
 
   return (
     <div className="flex flex-col" style={{ height: "100vh", background: "#f5f5f5" }}>
-      {/* Navigation Bar */}
-      <nav>
-        <div className="nav-wrapper" style={{ padding: "0 16px" }}>
-          <div className="flex items-center justify-between" style={{ height: 64 }}>
-            <div className="flex items-center gap-2">
-              <span className="brand-logo" style={{ position: "static" }}>
-                Educational AI Agent
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => toggleTheme?.()}
-                className="btn-flat"
-                style={{ color: "#fff", padding: "0 12px" }}
-              >
-                <MaterialIcon icon={theme === "dark" ? "Sun" : "Moon"} />
-              </button>
-              {(["Document Viewer", "Saves", "Settings"] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className="btn-flat"
-                  style={{
-                    color: activeTab === tab ? "#fff" : "rgba(255,255,255,0.7)",
-                    background: activeTab === tab ? "rgba(255,255,255,0.15)" : "transparent",
-                    fontWeight: activeTab === tab ? 600 : 400,
-                    padding: "0 16px", height: 36, borderRadius: 4, fontSize: 14
-                  }}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </nav>
+       {/* Navigation Bar */}
+       <nav>
+         <div className="nav-wrapper" style={{ padding: "0 16px" }}>
+           <div className="flex items-center justify-between" style={{ height: 64 }}>
+             <div className="flex items-center gap-2">
+               <span className="brand-logo" style={{ position: "static" }}>
+                 Educational AI Agent
+               </span>
+               <button
+                 onClick={() => toggleTheme?.()}
+                 className="btn-flat"
+                 style={{ color: "#fff", padding: "0 12px" }}
+               >
+                 <MaterialIcon icon={theme === "dark" ? "Sun" : "Moon"} />
+               </button>
+             </div>
+             <div className="flex items-center gap-1">
+               {(["Document Viewer", "Saves", "Settings"] as const).map(tab => (
+                 <button
+                   key={tab}
+                   onClick={() => setActiveTab(tab)}
+                   className="btn-flat"
+                   style={{
+                     color: activeTab === tab ? "#fff" : "rgba(255,255,255,0.7)",
+                     background: activeTab === tab ? "rgba(255,255,255,0.15)" : "transparent",
+                     fontWeight: activeTab === tab ? 600 : 400,
+                     padding: "0 16px", height: 36, borderRadius: 4, fontSize: 14
+                   }}
+                 >
+                   {tab}
+                 </button>
+               ))}
+             </div>
+           </div>
+         </div>
+       </nav>
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
