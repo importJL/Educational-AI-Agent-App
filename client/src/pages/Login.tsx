@@ -40,7 +40,6 @@ export default function Login() {
                 type="text"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
-                placeholder=" "
                 required
               />
               <label htmlFor="username">Username</label>
@@ -51,7 +50,6 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder=" "
                 required
               />
               <label htmlFor="password">Password</label>

@@ -155,7 +155,7 @@ class SDKServer {
   }
 
   private getSessionSecret() {
-    const secret = ENV.cookieSecret || crypto.randomUUID();
+    const secret = ENV.cookieSecret;
     return new TextEncoder().encode(secret);
   }
 

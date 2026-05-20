@@ -51,23 +51,12 @@ function AppContent() {
               </span>
             </div>
             <div className="flex items-center gap-1">
-                <button
-                  onClick={() => toggleTheme?.()}
-                  className="btn-flat"
-                  style={{
-                    color: "rgba(255,255,255,0.7)",
-                    background: "transparent",
-                    fontWeight: 400,
-                    padding: "0 16px",
-                    height: 36,
-                    borderRadius: 4,
-                    fontSize: 14,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <MaterialIcon icon={theme === "dark" ? "Sun" : "Moon"} style={{ fontSize: 18, height: 18, width: 18, display: "flex", alignItems: "center", justifyContent: "center" }} />
+              <button
+                onClick={() => toggleTheme?.()}
+                className="btn-flat"
+                style={{ color: "#fff", padding: "0 12px" }}
+              >
+                <MaterialIcon icon={theme === "dark" ? "Sun" : "Moon"} />
               </button>
               {(["Document Viewer", "Saves", "Settings"] as const).map(tab => (
                 <button
