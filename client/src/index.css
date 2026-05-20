@@ -426,6 +426,13 @@ nav {
   border-color: #42a5f5;
 }
 
+/* Floating label behavior for input-field (no Materialize JS loaded) */
+.input-field input:focus + label,
+.input-field input:not(:placeholder-shown) + label {
+  transform: translateY(-14px) scale(0.8);
+  transform-origin: 0 0;
+}
+
 .dark .sidenav {
   background-color: #1a1a1a;
 }
